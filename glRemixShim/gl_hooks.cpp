@@ -209,8 +209,8 @@ namespace glRemix::hooks
         const size_t cmd_bytes = sizeof(GLTexImage2DCommand);
         const size_t total_bytes = cmd_bytes + pixels_bytes;
 
-        std::unique_ptr<uint8_t[]> payload(new uint8_t[total_bytes]);
-        auto* cmd = reinterpret_cast<GLTexImage2DCommand*>(payload.get());
+        uint8_t* payload = g_recorder.GetScratchBuffer(total_bytes);
+        auto* cmd = reinterpret_cast<GLTexImage2DCommand*>(payload);
 
         *cmd = {static_cast<uint32_t>(target),
                 static_cast<uint32_t>(level),
@@ -225,11 +225,11 @@ namespace glRemix::hooks
 
         if (pixels && pixels_bytes > 0)
         {
-            memcpy(payload.get() + cmd_bytes, pixels, pixels_bytes);
+            memcpy(payload + cmd_bytes, pixels, pixels_bytes);
         }
 
         g_recorder.Record(GLCommandType::GLCMD_TEX_IMAGE_2D,
-                        payload.get(),
+                        payload,
                         static_cast<uint32_t>(total_bytes));
     }
 
