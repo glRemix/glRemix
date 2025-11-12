@@ -3,8 +3,7 @@
 #include "framework.h"
 
 #include <gl_loader.h>
-
-#include <GL/gl.h>
+#include <gl_utils.h> // shared
 
 #include <mutex>
 #include <tsl/robin_map.h>
@@ -193,26 +192,47 @@ namespace glRemix::hooks
         g_recorder.Record(glRemix::GLCommandType::GLCMD_DELETE_TEXTURES, &payload, sizeof(payload));
     }
 
+    /* This override is slightly unique. We will record most of the parameters as usual.
+    * However, since the `pixels` pointer means nothing in the renderer process context, we also do
+    * O(n) `memcpy` raw image bytes into the command payload. The renderer can subsequently then handle
+    * this special-case command cleanly.
+    */
     void APIENTRY gl_tex_image_2d_ovr(GLenum target,
-                                      GLint level,
-                                      GLint internalFormat,
-                                      GLsizei width,
-                                      GLsizei height,
-                                      GLint border,
-                                      GLenum format,
-                                      GLenum type,
-                                      const void* pixels)
+                                  GLint level,
+                                  GLint internalFormat,
+                                  GLsizei width,
+                                  GLsizei height,
+                                  GLint border,
+                                  GLenum format,
+                                  GLenum type,
+                                  const void* pixels)
     {
-        glRemix::GLTexImage2DCommand payload{target,
-                                             level,
-                                             internalFormat,
-                                             (uint32_t)width,
-                                             (uint32_t)height,
-                                             border,
-                                             format,
-                                             type,
-                                             reinterpret_cast<uint64_t>(pixels)};
-        g_recorder.Record(glRemix::GLCommandType::GLCMD_TEX_IMAGE_2D, &payload, sizeof(payload));
+        const size_t pixels_bytes = ComputePixelDataSize(width, height, format, type);
+        const size_t cmd_bytes = sizeof(GLTexImage2DCommand);
+        const size_t total_bytes = cmd_bytes + pixels_bytes;
+
+        uint8_t* payload = g_recorder.GetScratchBuffer(total_bytes);
+        auto* cmd = reinterpret_cast<GLTexImage2DCommand*>(payload);
+
+        *cmd = {static_cast<uint32_t>(target),
+                static_cast<uint32_t>(level),
+                static_cast<uint32_t>(internalFormat),
+                static_cast<uint32_t>(width),
+                static_cast<uint32_t>(height),
+                static_cast<uint32_t>(border),
+                static_cast<uint32_t>(format),
+                static_cast<uint32_t>(type),
+                static_cast<uint32_t>(pixels_bytes),
+                static_cast<uint32_t>(cmd_bytes)};
+
+        if (pixels && pixels_bytes > 0)
+        {
+            memcpy(payload + cmd_bytes, pixels, pixels_bytes);
+        }
+
+        g_recorder.Record(GLCommandType::GLCMD_TEX_IMAGE_2D,
+                        payload,
+                        static_cast<uint32_t>(total_bytes));
     }
 
     void APIENTRY gl_tex_parameterf_ovr(GLenum target, GLenum pname, GLfloat param)
@@ -452,41 +472,41 @@ namespace glRemix::hooks
 	{
 	    std::call_once(g_install_flag, []()
 	    {
-            //gl::register_hook("glBegin", reinterpret_cast<PROC>(&gl_begin_ovr));
-            //gl::register_hook("glEnd", reinterpret_cast<PROC>(&gl_end_ovr));
-            //gl::register_hook("glVertex2f", reinterpret_cast<PROC>(&gl_vertex2f_ovr));
-            //gl::register_hook("glVertex3f", reinterpret_cast<PROC>(&gl_vertex3f_ovr));
-            //gl::register_hook("glColor3f", reinterpret_cast<PROC>(&gl_color3f_ovr));
-            //gl::register_hook("glColor4f", reinterpret_cast<PROC>(&gl_color4f_ovr));
-            //gl::register_hook("glNormal3f", reinterpret_cast<PROC>(&gl_normal3f_ovr));
-            //gl::register_hook("glTexCoord2f", reinterpret_cast<PROC>(&gl_tex_coord2f_ovr));
-            //gl::register_hook("glMatrixMode", reinterpret_cast<PROC>(&gl_matrix_mode_ovr));
-            //gl::register_hook("glLoadIdentity", reinterpret_cast<PROC>(&gl_load_identity_ovr));
-            //gl::register_hook("glLoadMatrixf", reinterpret_cast<PROC>(&gl_load_matrixf_ovr));
-            //gl::register_hook("glMultMatrixf", reinterpret_cast<PROC>(&gl_mult_matrixf_ovr));
-            //gl::register_hook("glPushMatrix", reinterpret_cast<PROC>(&gl_push_matrix_ovr));
-            //gl::register_hook("glPopMatrix", reinterpret_cast<PROC>(&gl_pop_matrix_ovr));
-            //gl::register_hook("glTranslatef", reinterpret_cast<PROC>(&gl_translatef_ovr));
-            //gl::register_hook("glRotatef", reinterpret_cast<PROC>(&gl_rotatef_ovr));
-            //gl::register_hook("glScalef", reinterpret_cast<PROC>(&gl_scalef_ovr));
-            //gl::register_hook("glBindTexture", reinterpret_cast<PROC>(&gl_bind_texture_ovr));
-            //gl::register_hook("glGenTextures", reinterpret_cast<PROC>(&gl_gen_textures_ovr));
-            //gl::register_hook("glDeleteTextures", reinterpret_cast<PROC>(&gl_delete_textures_ovr));
-            //gl::register_hook("glTexImage2D", reinterpret_cast<PROC>(&gl_tex_image_2d_ovr));
-            //gl::register_hook("glTexParameterf", reinterpret_cast<PROC>(&gl_tex_parameterf_ovr));
-            //gl::register_hook("glEnable", reinterpret_cast<PROC>(&gl_enable_ovr));
-            //gl::register_hook("glDisable", reinterpret_cast<PROC>(&gl_disable_ovr));
-            //gl::register_hook("glLightf", reinterpret_cast<PROC>(&gl_lightf_ovr));
-            //gl::register_hook("glLightfv", reinterpret_cast<PROC>(&gl_lightfv_ovr));
-            //gl::register_hook("glMaterialf", reinterpret_cast<PROC>(&gl_materialf_ovr));
-            //gl::register_hook("glMaterialfv", reinterpret_cast<PROC>(&gl_materialfv_ovr));
-            //gl::register_hook("glClear", reinterpret_cast<PROC>(&gl_clear_ovr));
-            //gl::register_hook("glClearColor", reinterpret_cast<PROC>(&gl_clear_color_ovr));
-            //gl::register_hook("glFlush", reinterpret_cast<PROC>(&gl_flush_ovr));
-            //gl::register_hook("glFinish", reinterpret_cast<PROC>(&gl_finish_ovr));
-            //gl::register_hook("glViewport", reinterpret_cast<PROC>(&gl_viewport_ovr));
-            //gl::register_hook("glOrtho", reinterpret_cast<PROC>(&gl_ortho_ovr));
-            //gl::register_hook("glFrustum", reinterpret_cast<PROC>(&gl_frustum_ovr));
+            gl::register_hook("glBegin", reinterpret_cast<PROC>(&gl_begin_ovr));
+            gl::register_hook("glEnd", reinterpret_cast<PROC>(&gl_end_ovr));
+            gl::register_hook("glVertex2f", reinterpret_cast<PROC>(&gl_vertex2f_ovr));
+            gl::register_hook("glVertex3f", reinterpret_cast<PROC>(&gl_vertex3f_ovr));
+            gl::register_hook("glColor3f", reinterpret_cast<PROC>(&gl_color3f_ovr));
+            gl::register_hook("glColor4f", reinterpret_cast<PROC>(&gl_color4f_ovr));
+            gl::register_hook("glNormal3f", reinterpret_cast<PROC>(&gl_normal3f_ovr));
+            gl::register_hook("glTexCoord2f", reinterpret_cast<PROC>(&gl_tex_coord2f_ovr));
+            gl::register_hook("glMatrixMode", reinterpret_cast<PROC>(&gl_matrix_mode_ovr));
+            gl::register_hook("glLoadIdentity", reinterpret_cast<PROC>(&gl_load_identity_ovr));
+            gl::register_hook("glLoadMatrixf", reinterpret_cast<PROC>(&gl_load_matrixf_ovr));
+            gl::register_hook("glMultMatrixf", reinterpret_cast<PROC>(&gl_mult_matrixf_ovr));
+            gl::register_hook("glPushMatrix", reinterpret_cast<PROC>(&gl_push_matrix_ovr));
+            gl::register_hook("glPopMatrix", reinterpret_cast<PROC>(&gl_pop_matrix_ovr));
+            gl::register_hook("glTranslatef", reinterpret_cast<PROC>(&gl_translatef_ovr));
+            gl::register_hook("glRotatef", reinterpret_cast<PROC>(&gl_rotatef_ovr));
+            gl::register_hook("glScalef", reinterpret_cast<PROC>(&gl_scalef_ovr));
+            gl::register_hook("glBindTexture", reinterpret_cast<PROC>(&gl_bind_texture_ovr));
+            gl::register_hook("glGenTextures", reinterpret_cast<PROC>(&gl_gen_textures_ovr));
+            gl::register_hook("glDeleteTextures", reinterpret_cast<PROC>(&gl_delete_textures_ovr));
+            gl::register_hook("glTexImage2D", reinterpret_cast<PROC>(&gl_tex_image_2d_ovr));
+            gl::register_hook("glTexParameterf", reinterpret_cast<PROC>(&gl_tex_parameterf_ovr));
+            gl::register_hook("glEnable", reinterpret_cast<PROC>(&gl_enable_ovr));
+            gl::register_hook("glDisable", reinterpret_cast<PROC>(&gl_disable_ovr));
+            gl::register_hook("glLightf", reinterpret_cast<PROC>(&gl_lightf_ovr));
+            gl::register_hook("glLightfv", reinterpret_cast<PROC>(&gl_lightfv_ovr));
+            gl::register_hook("glMaterialf", reinterpret_cast<PROC>(&gl_materialf_ovr));
+            gl::register_hook("glMaterialfv", reinterpret_cast<PROC>(&gl_materialfv_ovr));
+            gl::register_hook("glClear", reinterpret_cast<PROC>(&gl_clear_ovr));
+            gl::register_hook("glClearColor", reinterpret_cast<PROC>(&gl_clear_color_ovr));
+            gl::register_hook("glFlush", reinterpret_cast<PROC>(&gl_flush_ovr));
+            gl::register_hook("glFinish", reinterpret_cast<PROC>(&gl_finish_ovr));
+            gl::register_hook("glViewport", reinterpret_cast<PROC>(&gl_viewport_ovr));
+            gl::register_hook("glOrtho", reinterpret_cast<PROC>(&gl_ortho_ovr));
+            gl::register_hook("glFrustum", reinterpret_cast<PROC>(&gl_frustum_ovr));
 
             gl::register_hook("glCallList", reinterpret_cast<PROC>(&gl_call_list_ovr));
             gl::register_hook("glNewList", reinterpret_cast<PROC>(&gl_new_list_ovr));

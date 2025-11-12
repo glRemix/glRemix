@@ -21,8 +21,8 @@ public:
         {
             GLCommandObject cmd;
             cmd.cmdUnifs = {type, size};
-            cmd.data.assign(reinterpret_cast<const uint8_t*>(payload),
-                            reinterpret_cast<const uint8_t*>(payload) + size);
+            cmd.data.resize(size);
+            std::memcpy(cmd.data.data(), payload, size);
 
             m_frameUnifs.payloadSize += sizeof(cmd.cmdUnifs) + size;
 
@@ -68,6 +68,14 @@ public:
         m_commands.clear();
         m_frameUnifs.payloadSize = 0;
         m_frameUnifs.frameIndex++;
+    }
+
+    inline uint8_t* GetScratchBuffer(size_t requiredSize)
+    {
+        static thread_local std::vector<uint8_t> scratch;
+        if (scratch.size() < requiredSize)
+            scratch.resize(requiredSize);
+        return scratch.data();
     }
 
 private:
