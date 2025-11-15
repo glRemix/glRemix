@@ -1,9 +1,10 @@
 #pragma once
 
-#include <ipc_protocol.h>  // TODO: per-project prefixes
-#include <gl_commands.h>
 #include <vector>
 #include <mutex>
+
+#include <shared/ipc_protocol.h>
+#include <shared/gl_commands.h>
 
 namespace glRemix
 {

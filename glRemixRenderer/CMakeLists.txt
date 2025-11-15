@@ -77,10 +77,10 @@ add_executable(${PROJECT_NAME}
 
 target_include_directories(${PROJECT_NAME} PRIVATE 
     "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${GLREMIX_SHARED_DIR}"
     "${REPO_ROOT}/external/robin-map-1.4.0/include"
     "${REPO_ROOT}/external/D3D12MemoryAllocator-3.0.1/include"
     "${REPO_ROOT}/external/imgui"
+    "${REPO_ROOT}"
 )
 
 set(_GLREMIX_COPY_IF_EXISTS_SCRIPT "${GLREMIX_COPY_IF_EXISTS_SCRIPT}")

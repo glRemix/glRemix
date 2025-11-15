@@ -7,3 +7,6 @@ d419e873b93b22311bd15558a299b1e49608cda0  # ci: move helper.h, const correct, na
 6436be7d8ca891790ef7e2d43c16046af42de0e9  # ci: allman, UINT32/64, snakecase, git blame ignore
 c81c1a06ea27093ba468ea94e98c89b7821e3a3d  # ci: run clang-format on glRemixRenderer, glRemixShim, shared dirs
 b80dcead419e99dcc9f926d5f30c9df9666772b1  # ci: standardize casing for glRemix namespace
+fc0293aea3c474f79a1138fa081783770efeffc6  # ci: convert 'frame_recorder.h' to LF
+10b5704c70044a8d6c4130825168c95d08eb1a20  # ci: workarounds for unreadable allman formatting of lambdas and aligned init list
+c6c44c9849304bcf21cc6e21c86965109e960ee5  # ci: convert 'frame_recorder.cpp' to LF

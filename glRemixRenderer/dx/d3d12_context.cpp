@@ -3,10 +3,11 @@
 #include <algorithm>
 #include <cassert>
 #include <stdexcept>
+#include <DirectXMath.h>
+
+#include <shared/math_utils.h>
 
 #include "application.h"
-#include <DirectXMath.h>
-#include "math_utils.h"
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"

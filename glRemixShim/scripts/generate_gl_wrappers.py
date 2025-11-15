@@ -249,11 +249,11 @@ def generate_wrappers(args: argparse.Namespace) -> None:
         alias_lines: List[str] = [header.strip()]
 
         ix86_lines = [
-            f"#pragma comment(linker, \"/export:{signature['name']}=_{signature['name']}@{parameter_stack_size(signature['param_types'])}\")"
+            f"#pragma comment(linker, \"/export:{signature['name']}=_glRemix_{signature['name']}@{parameter_stack_size(signature['param_types'])}\")"
             for signature in signatures
         ]
         generic_lines = [
-            f"#pragma comment(linker, \"/export:{signature['name']}\")"
+            f"#pragma comment(linker, \"/export:{signature['name']}=glRemix_{signature['name']}\")"
             for signature in signatures
         ]
 

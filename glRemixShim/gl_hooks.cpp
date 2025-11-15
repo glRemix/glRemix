@@ -188,15 +188,17 @@ void APIENTRY gl_tex_image_2d_ovr(GLenum target, GLint level, GLint internalForm
                                   GLsizei height, GLint border, GLenum format, GLenum type,
                                   const void* pixels)
 {
-    GLTexImage2DCommand payload{ target,
-                                 level,
-                                 internalFormat,
-                                 (UINT32)width,
-                                 (UINT32)height,
-                                 border,
-                                 format,
-                                 type,
-                                 reinterpret_cast<uint64_t>(pixels) };
+    GLTexImage2DCommand payload;
+    payload.target = target;
+    payload.level = level;
+    payload.internalFormat = internalFormat;
+    payload.width = (UINT32)width;
+    payload.height = (UINT32)height;
+    payload.border = border;
+    payload.format = format;
+    payload.type = type;
+    payload.dataPtr = reinterpret_cast<UINT64>(pixels);
+
     g_recorder.record(GLCommandType::GLCMD_TEX_IMAGE_2D, &payload, sizeof(payload));
 }
 
@@ -404,7 +406,7 @@ HGLRC WINAPI create_context_ovr(HDC dc)
 
     g_recorder.record(GLCommandType::GLCMD_CREATE, &hwnd, sizeof(HWND));
 
-    return reinterpret_cast<HGLRC>(0xDEADBEEF);  // Dummy context handle
+    return reinterpret_cast<HGLRC>(static_cast<UINT_PTR>(0xDEADBEEF));  // Dummy context handle
 }
 
 BOOL WINAPI delete_context_ovr(HGLRC context)
@@ -437,66 +439,65 @@ std::once_flag g_install_flag;
 
 void install_overrides()
 {
-    std::call_once(
-        g_install_flag,
-        []
-        {
-            gl::register_hook("glBegin", reinterpret_cast<PROC>(&gl_begin_ovr));
-            gl::register_hook("glEnd", reinterpret_cast<PROC>(&gl_end_ovr));
-            gl::register_hook("glVertex2f", reinterpret_cast<PROC>(&gl_vertex2f_ovr));
-            gl::register_hook("glVertex3f", reinterpret_cast<PROC>(&gl_vertex3f_ovr));
-            gl::register_hook("glColor3f", reinterpret_cast<PROC>(&gl_color3f_ovr));
-            gl::register_hook("glColor4f", reinterpret_cast<PROC>(&gl_color4f_ovr));
-            gl::register_hook("glNormal3f", reinterpret_cast<PROC>(&gl_normal3f_ovr));
-            gl::register_hook("glTexCoord2f", reinterpret_cast<PROC>(&gl_tex_coord2f_ovr));
-            gl::register_hook("glMatrixMode", reinterpret_cast<PROC>(&gl_matrix_mode_ovr));
-            gl::register_hook("glLoadIdentity", reinterpret_cast<PROC>(&gl_load_identity_ovr));
-            gl::register_hook("glLoadMatrixf", reinterpret_cast<PROC>(&gl_load_matrixf_ovr));
-            gl::register_hook("glMultMatrixf", reinterpret_cast<PROC>(&gl_mult_matrixf_ovr));
-            gl::register_hook("glPushMatrix", reinterpret_cast<PROC>(&gl_push_matrix_ovr));
-            gl::register_hook("glPopMatrix", reinterpret_cast<PROC>(&gl_pop_matrix_ovr));
-            gl::register_hook("glTranslatef", reinterpret_cast<PROC>(&gl_translatef_ovr));
-            gl::register_hook("glRotatef", reinterpret_cast<PROC>(&gl_rotatef_ovr));
-            gl::register_hook("glScalef", reinterpret_cast<PROC>(&gl_scalef_ovr));
-            gl::register_hook("glBindTexture", reinterpret_cast<PROC>(&gl_bind_texture_ovr));
-            gl::register_hook("glGenTextures", reinterpret_cast<PROC>(&gl_gen_textures_ovr));
-            gl::register_hook("glDeleteTextures", reinterpret_cast<PROC>(&gl_delete_textures_ovr));
-            gl::register_hook("glTexImage2D", reinterpret_cast<PROC>(&gl_tex_image_2d_ovr));
-            gl::register_hook("glTexParameterf", reinterpret_cast<PROC>(&gl_tex_parameterf_ovr));
-            gl::register_hook("glEnable", reinterpret_cast<PROC>(&gl_enable_ovr));
-            gl::register_hook("glDisable", reinterpret_cast<PROC>(&gl_disable_ovr));
-            gl::register_hook("glLightf", reinterpret_cast<PROC>(&gl_lightf_ovr));
-            gl::register_hook("glLightfv", reinterpret_cast<PROC>(&gl_lightfv_ovr));
-            gl::register_hook("glMaterialf", reinterpret_cast<PROC>(&gl_materialf_ovr));
-            gl::register_hook("glMaterialfv", reinterpret_cast<PROC>(&gl_materialfv_ovr));
-            gl::register_hook("glClear", reinterpret_cast<PROC>(&gl_clear_ovr));
-            gl::register_hook("glClearColor", reinterpret_cast<PROC>(&gl_clear_color_ovr));
-            gl::register_hook("glFlush", reinterpret_cast<PROC>(&gl_flush_ovr));
-            gl::register_hook("glFinish", reinterpret_cast<PROC>(&gl_finish_ovr));
-            gl::register_hook("glViewport", reinterpret_cast<PROC>(&gl_viewport_ovr));
-            gl::register_hook("glOrtho", reinterpret_cast<PROC>(&gl_ortho_ovr));
-            gl::register_hook("glFrustum", reinterpret_cast<PROC>(&gl_frustum_ovr));
+    // create lambda function for `std::call_once`
+    auto register_all_hooks_once_fn = []
+    {
+        gl::register_hook("glBegin", reinterpret_cast<PROC>(&gl_begin_ovr));
+        gl::register_hook("glEnd", reinterpret_cast<PROC>(&gl_end_ovr));
+        gl::register_hook("glVertex2f", reinterpret_cast<PROC>(&gl_vertex2f_ovr));
+        gl::register_hook("glVertex3f", reinterpret_cast<PROC>(&gl_vertex3f_ovr));
+        gl::register_hook("glColor3f", reinterpret_cast<PROC>(&gl_color3f_ovr));
+        gl::register_hook("glColor4f", reinterpret_cast<PROC>(&gl_color4f_ovr));
+        gl::register_hook("glNormal3f", reinterpret_cast<PROC>(&gl_normal3f_ovr));
+        gl::register_hook("glTexCoord2f", reinterpret_cast<PROC>(&gl_tex_coord2f_ovr));
+        gl::register_hook("glMatrixMode", reinterpret_cast<PROC>(&gl_matrix_mode_ovr));
+        gl::register_hook("glLoadIdentity", reinterpret_cast<PROC>(&gl_load_identity_ovr));
+        gl::register_hook("glLoadMatrixf", reinterpret_cast<PROC>(&gl_load_matrixf_ovr));
+        gl::register_hook("glMultMatrixf", reinterpret_cast<PROC>(&gl_mult_matrixf_ovr));
+        gl::register_hook("glPushMatrix", reinterpret_cast<PROC>(&gl_push_matrix_ovr));
+        gl::register_hook("glPopMatrix", reinterpret_cast<PROC>(&gl_pop_matrix_ovr));
+        gl::register_hook("glTranslatef", reinterpret_cast<PROC>(&gl_translatef_ovr));
+        gl::register_hook("glRotatef", reinterpret_cast<PROC>(&gl_rotatef_ovr));
+        gl::register_hook("glScalef", reinterpret_cast<PROC>(&gl_scalef_ovr));
+        gl::register_hook("glBindTexture", reinterpret_cast<PROC>(&gl_bind_texture_ovr));
+        gl::register_hook("glGenTextures", reinterpret_cast<PROC>(&gl_gen_textures_ovr));
+        gl::register_hook("glDeleteTextures", reinterpret_cast<PROC>(&gl_delete_textures_ovr));
+        gl::register_hook("glTexImage2D", reinterpret_cast<PROC>(&gl_tex_image_2d_ovr));
+        gl::register_hook("glTexParameterf", reinterpret_cast<PROC>(&gl_tex_parameterf_ovr));
+        gl::register_hook("glEnable", reinterpret_cast<PROC>(&gl_enable_ovr));
+        gl::register_hook("glDisable", reinterpret_cast<PROC>(&gl_disable_ovr));
+        gl::register_hook("glLightf", reinterpret_cast<PROC>(&gl_lightf_ovr));
+        gl::register_hook("glLightfv", reinterpret_cast<PROC>(&gl_lightfv_ovr));
+        gl::register_hook("glMaterialf", reinterpret_cast<PROC>(&gl_materialf_ovr));
+        gl::register_hook("glMaterialfv", reinterpret_cast<PROC>(&gl_materialfv_ovr));
+        gl::register_hook("glClear", reinterpret_cast<PROC>(&gl_clear_ovr));
+        gl::register_hook("glClearColor", reinterpret_cast<PROC>(&gl_clear_color_ovr));
+        gl::register_hook("glFlush", reinterpret_cast<PROC>(&gl_flush_ovr));
+        gl::register_hook("glFinish", reinterpret_cast<PROC>(&gl_finish_ovr));
+        gl::register_hook("glViewport", reinterpret_cast<PROC>(&gl_viewport_ovr));
+        gl::register_hook("glOrtho", reinterpret_cast<PROC>(&gl_ortho_ovr));
+        gl::register_hook("glFrustum", reinterpret_cast<PROC>(&gl_frustum_ovr));
 
-            gl::register_hook("glCallList", reinterpret_cast<PROC>(&gl_call_list_ovr));
-            gl::register_hook("glNewList", reinterpret_cast<PROC>(&gl_new_list_ovr));
-            gl::register_hook("glEndList", reinterpret_cast<PROC>(&gl_end_list_ovr));
-            gl::register_hook("glGenLists", reinterpret_cast<PROC>(&gl_gen_lists_ovr));
+        gl::register_hook("glCallList", reinterpret_cast<PROC>(&gl_call_list_ovr));
+        gl::register_hook("glNewList", reinterpret_cast<PROC>(&gl_new_list_ovr));
+        gl::register_hook("glEndList", reinterpret_cast<PROC>(&gl_end_list_ovr));
+        gl::register_hook("glGenLists", reinterpret_cast<PROC>(&gl_gen_lists_ovr));
 
-            // Override WGL for app to work. Return success and try to do nothing.
-            gl::register_hook("wglChoosePixelFormat",
-                              reinterpret_cast<PROC>(&choose_pixel_format_ovr));
-            gl::register_hook("wglDescribePixelFormat",
-                              reinterpret_cast<PROC>(&describe_pixel_format_ovr));
-            gl::register_hook("wglGetPixelFormat", reinterpret_cast<PROC>(&get_pixel_format_ovr));
-            gl::register_hook("wglSetPixelFormat", reinterpret_cast<PROC>(&set_pixel_format_ovr));
-            gl::register_hook("wglSwapBuffers", reinterpret_cast<PROC>(&swap_buffers_ovr));
-            gl::register_hook("wglCreateContext", reinterpret_cast<PROC>(&create_context_ovr));
-            gl::register_hook("wglDeleteContext", reinterpret_cast<PROC>(&delete_context_ovr));
-            gl::register_hook("wglGetCurrentContext",
-                              reinterpret_cast<PROC>(&get_current_context_ovr));
-            gl::register_hook("wglGetCurrentDC", reinterpret_cast<PROC>(&get_current_dc_ovr));
-            gl::register_hook("wglMakeCurrent", reinterpret_cast<PROC>(&make_current_ovr));
-            gl::register_hook("wglShareLists", reinterpret_cast<PROC>(&share_lists_ovr));
-        });
+        // Override WGL for app to work. Return success and try to do nothing.
+        gl::register_hook("wglChoosePixelFormat", reinterpret_cast<PROC>(&choose_pixel_format_ovr));
+        gl::register_hook("wglDescribePixelFormat",
+                          reinterpret_cast<PROC>(&describe_pixel_format_ovr));
+        gl::register_hook("wglGetPixelFormat", reinterpret_cast<PROC>(&get_pixel_format_ovr));
+        gl::register_hook("wglSetPixelFormat", reinterpret_cast<PROC>(&set_pixel_format_ovr));
+        gl::register_hook("wglSwapBuffers", reinterpret_cast<PROC>(&swap_buffers_ovr));
+        gl::register_hook("wglCreateContext", reinterpret_cast<PROC>(&create_context_ovr));
+        gl::register_hook("wglDeleteContext", reinterpret_cast<PROC>(&delete_context_ovr));
+        gl::register_hook("wglGetCurrentContext", reinterpret_cast<PROC>(&get_current_context_ovr));
+        gl::register_hook("wglGetCurrentDC", reinterpret_cast<PROC>(&get_current_dc_ovr));
+        gl::register_hook("wglMakeCurrent", reinterpret_cast<PROC>(&make_current_ovr));
+        gl::register_hook("wglShareLists", reinterpret_cast<PROC>(&share_lists_ovr));
+    };
+
+    std::call_once(g_install_flag, register_all_hooks_once_fn);
 }
 }  // namespace glRemix::hooks

@@ -10,7 +10,8 @@
 #include "undef_export_macros.h"
 
 // Custom implementation of wglGetProcAddress to return our hooked functions
-extern "C" __declspec(dllexport) PROC WINAPI wglGetProcAddress(LPCSTR name)
+// prefix with `glRemix_` to avoid conflicting symbols
+extern "C" __declspec(dllexport) PROC WINAPI glRemix_wglGetProcAddress(LPCSTR name)
 {
     if (name == nullptr)
     {
