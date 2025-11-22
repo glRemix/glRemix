@@ -24,6 +24,7 @@ set(RENDERER_SOURCES
     "descriptor_pager.cpp"
 
     "${gl_dir}/gl_matrix_stack.cpp"
+    "${gl_dir}/gl_driver.cpp"
 
     "application.cpp"
     "rt_app.cpp"
@@ -45,6 +46,9 @@ set(RENDERER_HEADERS
     "descriptor_pager.h"
 
     "${gl_dir}/gl_matrix_stack.h"
+    "${gl_dir}/gl_command_utils.h"
+    "${gl_dir}/gl_driver.h"
+    "${gl_dir}/gl_state.h"
 
     "structs.h"
     "shared_structs.h"

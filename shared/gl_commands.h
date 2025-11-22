@@ -7,63 +7,6 @@
 
 namespace glRemix
 {
-
-enum class GLTopology : UINT32
-{
-    GL_QUADS = 0x0007,
-    GL_QUAD_STRIP = 0x0008
-};
-
-enum class GLLight : UINT32
-{
-    // light name
-    GL_LIGHT0 = 0x4000,
-    GL_LIGHT1 = 0x4001,
-    GL_LIGHT2 = 0x4002,
-    GL_LIGHT3 = 0x4003,
-    GL_LIGHT4 = 0x4004,
-    GL_LIGHT5 = 0x4005,
-    GL_LIGHT6 = 0x4006,
-    GL_LIGHT7 = 0x4007,
-
-    // light parameter
-    GL_AMBIENT = 0x1200,
-    GL_DIFFUSE = 0x1201,
-    GL_SPECULAR = 0x1202,
-    GL_POSITION = 0x1203,
-    GL_SPOT_DIRECTION = 0x1204,
-    GL_SPOT_EXPONENT = 0x1205,
-    GL_SPOT_CUTOFF = 0x1206,
-    GL_CONSTANT_ATTENUATION = 0x1207,
-    GL_LINEAR_ATTENUATION = 0x1208,
-    GL_QUADRATIC_ATTENUATION = 0x1209
-};
-
-enum class GLMaterial : UINT32
-{
-    // face
-    GL_NONE = 0x0000,
-    GL_FRONT_LEFT = 0x0400,
-    GL_FRONT_RIGHT = 0x0401,
-    GL_BACK_LEFT = 0x0402,
-    GL_BACK_RIGHT = 0x0403,
-    GL_FRONT = 0x0404,
-    GL_BACK = 0x0405,
-    GL_LEFT = 0x0406,
-    GL_RIGHT = 0x0407,
-    GL_FRONT_AND_BACK = 0x0408,
-    GL_AUX0 = 0x0409,
-    GL_AUX1 = 0x040A,
-    GL_AUX2 = 0x040B,
-    GL_AUX3 = 0x040C,
-
-    // property
-    GL_EMISSION = 0x1600,
-    GL_SHININESS = 0x1601,
-    GL_AMBIENT_AND_DIFFUSE = 0x1602,
-    GL_COLOR_INDEXES = 0x1603
-};
-
 enum class GLCommandType : UINT32
 {
     // Core Immediate Mode
@@ -144,6 +87,9 @@ enum class GLCommandType : UINT32
 
     // Other
     WGLCMD_CREATE_CONTEXT,  // wglCreateContext needs IPC
+
+    END_COMMANDS,  // sentinel value (keep this as the last element in enum to always have a count
+                   // of enum elements)
 };
 
 // Component Structs

@@ -15,8 +15,9 @@ struct RayGenConstantBuffer
 struct Vertex
 {
     XMFLOAT3 position;
-    XMFLOAT3 color;
+    XMFLOAT4 color;
     XMFLOAT3 normal;
+    XMFLOAT2 uv;
 };
 
 struct Light

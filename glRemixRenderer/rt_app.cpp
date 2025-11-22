@@ -105,12 +105,6 @@ void glRemix::glRemixRenderer::create()
                                                       m_raster_pipeline.ReleaseAndGetAddressOf(),
                                                       "raster pipeline"));
 
-    {
-        // setup IPC
-        m_ipc.init_reader();
-        m_ipc_buffer.resize(m_ipc.get_max_payload_size());
-    }
-
     // Create raytracing global root signature
     // TODO: Make a singular very large root signature that is used for all ray tracing pipelines
     {
@@ -319,8 +313,8 @@ void glRemix::glRemixRenderer::create()
                                               m_raygen_cbv_descriptors[i]);
     }
 
-    dx::BufferDesc light_desc{ .size = align_u32(sizeof(Light) * m_lights.size(), CB_ALIGNMENT),
-                               .stride = align_u32(sizeof(Light) * m_lights.size(), CB_ALIGNMENT),
+    dx::BufferDesc light_desc{ .size = align_u32(sizeof(Light) * 8, CB_ALIGNMENT),
+                               .stride = align_u32(sizeof(Light) * 8, CB_ALIGNMENT),
                                .visibility = dx::CPU | dx::GPU };
     for (UINT i = 0; i < m_frames_in_flight; i++)
     {
@@ -342,556 +336,10 @@ void glRemix::glRemixRenderer::create()
     m_context.create_shader_resource_view(m_gpu_mesh_record.buffer, m_gpu_mesh_record.descriptor);
 }
 
-void glRemix::glRemixRenderer::read_gl_command_stream()
-{
-    UINT32 payload_size = 0;
-
-    // consume frame from IPC buffer
-    m_ipc.consume_frame_or_wait(m_ipc_buffer.data(), &payload_size, &m_current_frame);
-
-    if (payload_size == 0)
-    {
-        return;
-    }
-
-    m_meshes.clear();              // per frame meshes
-    m_matrix_pool.clear();         // reset matrix pool each frame
-    m_materials.clear();
-    m_pending_geometries.clear();  // clear pending geometry data
-
-    // loop through data from frame
-    read_ipc_buffer(m_ipc_buffer, 0, payload_size);
-
-    // garbage collect meshes
-    for (auto it = m_mesh_map.begin(); it != m_mesh_map.end();)
-    {
-        auto& mesh = it->second;
-
-        if (m_current_frame - mesh.last_frame > FRAME_LENIENCY)
-        {
-            auto& resource = m_mesh_resources[mesh.blas_vb_ib_idx];
-            m_mesh_resources.free(mesh.blas_vb_ib_idx);
-            m_descriptor_pager.free_descriptor(dx::DescriptorPager::VB_IB,
-                                               &resource.vertex_buffer.descriptor);
-            m_descriptor_pager.free_descriptor(dx::DescriptorPager::VB_IB,
-                                               &resource.index_buffer.descriptor);
-            it = m_mesh_map.erase(it);
-        }
-        else
-        {
-            ++it;
-        }
-    }
-}
-
-void glRemix::glRemixRenderer::read_ipc_buffer(std::vector<UINT8>& buffer,
-                                               const size_t start_offset, const UINT32 payload_size,
-                                               const bool call_list)
-{
-    // display list logic
-    UINT32 list_index = 0;
-    size_t display_list_begin = 0;
-
-    size_t offset = start_offset;  // add additional start index
-
-    while (offset + sizeof(GLCommandUnifs) <= payload_size)
-    {
-        const auto* header = reinterpret_cast<const GLCommandUnifs*>(buffer.data() + offset);
-        offset += sizeof(GLCommandUnifs);
-
-        bool advance = true;
-
-        switch (header->type)
-        {
-            case GLCommandType::WGLCMD_CREATE_CONTEXT:
-            {
-                HWND hwnd;
-
-                // `header->dataSize` maintains compatibility when building 64-bit shim
-                memcpy(&hwnd, buffer.data() + offset, header->dataSize);
-
-                // hwnd = reinterpret_cast<HWND>(hwnd_ptr);
-                THROW_IF_FALSE(m_context.create_swapchain(hwnd, &m_gfx_queue, &m_frame_index));
-                THROW_IF_FALSE(m_context.create_swapchain_descriptors(m_swapchain_descriptors.data(),
-                                                                      &m_rtv_heap));
-                THROW_IF_FALSE(m_context.init_imgui());
-                create_uav_rt();
-                break;
-            }
-            case GLCommandType::GLCMD_NEW_LIST:
-            {
-                const auto* list = reinterpret_cast<const GLNewListCommand*>(
-                    buffer.data() + offset);  // reach into data payload
-
-                list_index = list->list;
-                list_mode_ = static_cast<gl::GLListMode>(list->mode);  // set global execution state
-
-                display_list_begin = offset + header->dataSize;
-
-                break;
-            }
-            case GLCommandType::GLCMD_CALL_LIST:
-            {
-                const auto* list = reinterpret_cast<const GLCallListCommand*>(
-                    buffer.data() + offset);  // reach into data payload
-
-                if (m_display_lists.contains(list->list))
-                {
-                    auto& list_buf = m_display_lists[list->list];
-                    const UINT32 list_end = static_cast<UINT32>(list_buf.size());
-
-                    read_ipc_buffer(list_buf, 0, list_end, true);
-                }
-                else
-                {
-                    char buffer[256];
-                    sprintf_s(buffer, "CALL_LIST missing id %u\n", list->list);
-                    OutputDebugStringA(buffer);
-                }
-                break;
-            }
-            case GLCommandType::GLCMD_END_LIST:
-            {
-                if (call_list)
-                {
-                    return;  // return immediately if we are within a calllist (we should return to
-                             // the invocation of read_ipc_buffer)
-                }
-                const auto display_list_end
-                    = offset;  // record GL_END_LIST to mark end of display list
-
-                // record new list in respective index
-                std::vector new_list(buffer.begin() + display_list_begin,
-                                     buffer.begin() + display_list_end);
-                m_display_lists[list_index] = std::move(new_list);
-
-                list_mode_ = gl::GLListMode::COMPILE_AND_EXECUTE;  // reset execution state
-
-                break;
-            }
-            // if we encounter GL_BEGIN we know that a new geometry is to be created
-            case GLCommandType::GLCMD_BEGIN:
-            {
-                const auto* type = reinterpret_cast<const GLBeginCommand*>(
-                    buffer.data() + offset);  // reach into data payload
-                offset += header->dataSize;   // we enter read geometry assuming first command
-                                              // inbetween glbegin and end
-                advance = false;
-                read_geometry(
-                    buffer.data(), &offset, static_cast<GLTopology>(type->mode), payload_size,
-                    call_list);  // store geometry data in vertex buffers depending on topology type
-                break;
-            }
-            case GLCommandType::GLCMD_NORMAL3F:
-            {
-                const auto* n = reinterpret_cast<const GLNormal3fCommand*>(buffer.data() + offset);
-                m_normal = { n->x, n->y, n->z };
-                break;
-            }
-            case GLCommandType::GLCMD_MATERIALF:
-            {
-                const auto* mat = reinterpret_cast<const GLMaterialfCommand*>(
-                    buffer.data() + offset);  // reach into data payload
-
-                // Ignore face parameter for now
-                auto set_xmfloat4 = [&](const float v) { return XMFLOAT4{ v, v, v, 1.0f }; };
-                switch (static_cast<GLLight>(mat->pname))
-                {
-                    case GLLight::GL_AMBIENT: m_material.ambient = set_xmfloat4(mat->param); break;
-                    case GLLight::GL_DIFFUSE: m_material.diffuse = set_xmfloat4(mat->param); break;
-                    case GLLight::GL_SPECULAR:
-                        m_material.specular = set_xmfloat4(mat->param);
-                        break;
-                    default:
-                        switch (static_cast<GLMaterial>(mat->pname))
-                        {
-                            case GLMaterial::GL_EMISSION:
-                                m_material.emission = set_xmfloat4(mat->param);
-                                break;
-                            case GLMaterial::GL_SHININESS: m_material.shininess = mat->param; break;
-                            default: break;
-                        }
-                        break;
-                }
-                break;
-            }
-            case GLCommandType::GLCMD_MATERIALFV:
-            {
-                const auto* mat = reinterpret_cast<const GLMaterialfvCommand*>(
-                    buffer.data() + offset);  // reach into data payload
-
-                // Ignore face parameter for now
-                auto set_xmfloat4 = [&](const GLVec4f& v)
-                { return XMFLOAT4{ v.x, v.y, v.z, v.w }; };
-
-                switch (static_cast<GLLight>(mat->pname))
-                {
-                    case GLLight::GL_AMBIENT: m_material.ambient = set_xmfloat4(mat->params); break;
-                    case GLLight::GL_DIFFUSE: m_material.diffuse = set_xmfloat4(mat->params); break;
-                    case GLLight::GL_SPECULAR:
-                        m_material.specular = set_xmfloat4(mat->params);
-                        break;
-                    default:
-                        switch (static_cast<GLMaterial>(mat->pname))
-                        {
-                            case GLMaterial::GL_EMISSION:
-                                m_material.emission = set_xmfloat4(mat->params);
-                                break;
-                            case GLMaterial::GL_SHININESS:
-                                m_material.shininess = mat->params.x;
-                                break;
-                            case GLMaterial::GL_AMBIENT_AND_DIFFUSE:
-                                m_material.ambient = set_xmfloat4(mat->params);
-                                m_material.diffuse = set_xmfloat4(mat->params);
-                                break;
-                            default: break;
-                        }
-                        break;
-                }
-
-                break;
-            }
-            case GLCommandType::GLCMD_LIGHTF:
-            {
-                const auto* light = reinterpret_cast<const GLLightCommand*>(
-                    buffer.data() + offset);  // reach into data payload
-
-                uint32_t light_index = static_cast<uint32_t>(light->light)
-                                       - static_cast<uint32_t>(GLLight::GL_LIGHT0);
-                Light& m_light = m_lights[light_index];
-
-                switch (static_cast<GLLight>(light->pname))
-                {
-                    case GLLight::GL_SPOT_EXPONENT: m_light.spot_exponent = light->param; break;
-                    case GLLight::GL_SPOT_CUTOFF: m_light.spot_cutoff = light->param; break;
-                    case GLLight::GL_CONSTANT_ATTENUATION:
-                        m_light.constant_attenuation = light->param;
-                        break;
-                    case GLLight::GL_LINEAR_ATTENUATION:
-                        m_light.linear_attenuation = light->param;
-                        break;
-                    case GLLight::GL_QUADRATIC_ATTENUATION:
-                        m_light.quadratic_attenuation = light->param;
-                        break;
-                    default: break;
-                }
-
-                break;
-            }
-            case GLCommandType::GLCMD_LIGHTFV:
-            {
-                const auto* light = reinterpret_cast<const GLLightfvCommand*>(
-                    buffer.data() + offset);  // reach into data payload
-
-                uint32_t light_index = static_cast<uint32_t>(light->light)
-                                       - static_cast<uint32_t>(GLLight::GL_LIGHT0);
-                Light& m_light = m_lights[light_index];
-
-                auto set_xmfloat4 = [&](const GLVec4f& v)
-                { return XMFLOAT4{ v.x, v.y, v.z, v.w }; };
-
-                auto set_xmfloat3 = [&](const GLVec4f& v) { return XMFLOAT3{ v.x, v.y, v.z }; };
-
-                switch (static_cast<GLLight>(light->pname))
-                {
-                    case GLLight::GL_POSITION:
-                        m_light.position = set_xmfloat4(light->params);
-                        break;
-                    case GLLight::GL_AMBIENT: m_light.ambient = set_xmfloat4(light->params); break;
-                    case GLLight::GL_DIFFUSE: m_light.diffuse = set_xmfloat4(light->params); break;
-                    case GLLight::GL_SPECULAR:
-                        m_light.specular = set_xmfloat4(light->params);
-                        break;
-                    case GLLight::GL_SPOT_DIRECTION:
-                        m_light.spot_direction = set_xmfloat3(light->params);
-                        break;
-                    default: break;
-                }
-
-                break;
-            }
-            case GLCommandType::GLCMD_MATRIX_MODE:
-            {
-                const auto* type = reinterpret_cast<const GLMatrixModeCommand*>(
-                    buffer.data() + offset);  // reach into data payload
-                matrix_mode = static_cast<gl::GLMatrixMode>(type->mode);
-                break;
-            }
-            case GLCommandType::GLCMD_PUSH_MATRIX:
-            {
-                m_matrix_stack.push(matrix_mode);
-                break;
-            }
-            case GLCommandType::GLCMD_POP_MATRIX:
-            {
-                m_matrix_stack.pop(matrix_mode);
-                break;
-            }
-            case GLCommandType::GLCMD_LOAD_IDENTITY:
-            {
-                m_matrix_stack.identity(matrix_mode);
-                break;
-            }
-            case GLCommandType::GLCMD_ROTATE:
-            {
-                const auto* angle_axis = reinterpret_cast<const GLRotateCommand*>(buffer.data()
-                                                                                  + offset);
-                const float angle = angle_axis->angle;
-                const float x = angle_axis->axis.x;
-                const float y = angle_axis->axis.y;
-                const float z = angle_axis->axis.z;
-
-                m_matrix_stack.rotate(matrix_mode, angle, x, y, z);
-                break;
-            }
-            case GLCommandType::GLCMD_TRANSLATE:
-            {
-                const auto* vec = reinterpret_cast<const GLTranslateCommand*>(buffer.data()
-                                                                              + offset);
-                m_matrix_stack.translate(matrix_mode, vec->t.x, vec->t.y, vec->t.z);
-                break;
-            }
-            case GLCommandType::GLCMD_FRUSTUM:
-            {
-                const auto* frust = reinterpret_cast<const GLFrustumCommand*>(buffer.data()
-                                                                              + offset);
-
-                // get current window dimensions
-                XMUINT2 win_dims{};
-                m_context.get_window_dimensions(&win_dims);
-
-                // recompute frustum based on dx12 window but using intercepted gl stream params
-                const double n = frust->zNear;
-                const double f = frust->zFar;
-
-                const float aspect = static_cast<float>(win_dims.x)
-                                     / static_cast<float>(win_dims.y);
-
-                const double fov_y = 2.0 * std::atan(frust->top / n);
-
-                const double t = n * std::tan(fov_y * 0.5);
-                const double b = -t;
-                const double r = t * aspect;
-                const double l = -r;
-
-                m_matrix_stack.frustum(matrix_mode, l, r, b, t, n, f);
-
-                break;
-            }
-
-            default:
-            {
-                char buffer[256];
-                sprintf_s(buffer, "glxRemixRenderer - Unhandled Command: %d (size: %u)\n",
-                          header->type, header->dataSize);
-                OutputDebugStringA(buffer);
-                break;
-            }
-        }
-
-        if (advance)
-        {
-            offset += header->dataSize;
-        }
-    }
-}
-
-// adds to vertex and index buffers depending on topology type
-void glRemix::glRemixRenderer::read_geometry(void* const ipc_buf, size_t* const offset,
-                                             const GLTopology topology, const UINT32 bytes_read,
-                                             const bool call_list)
-{
-    const auto byte_p = static_cast<UINT8*>(ipc_buf);
-
-    bool end_primitive = false;
-
-    // we will first assess if this mesh has been encountered before
-    std::vector<Vertex> t_vertices;
-    std::vector<UINT32> t_indices;
-
-    while (*offset + sizeof(GLCommandUnifs) <= bytes_read)
-    {
-        // get most recent header
-        const auto* header = reinterpret_cast<const GLCommandUnifs*>(byte_p + *offset);
-
-        *offset += sizeof(GLCommandUnifs);  // move into data payload
-
-        const auto* ipc_p = byte_p + *offset;
-
-        switch (header->type)
-        {
-            case GLCommandType::GLCMD_VERTEX3F:
-            {
-                const auto* v = reinterpret_cast<const GLVertex3fCommand*>(ipc_p);
-                // TODO: We should not be discarding A component of color if we want to support alpha
-                Vertex vertex{ .position = { v->x, v->y, v->z },
-                               .color = { m_color.x, m_color.y, m_color.z },
-                               .normal = m_normal };
-                t_vertices.push_back(vertex);
-                break;
-            }
-            case GLCommandType::GLCMD_NORMAL3F:
-            {
-                const auto* n = reinterpret_cast<const GLNormal3fCommand*>(ipc_p);
-                m_normal = { n->x, n->y, n->z };
-                break;
-            }
-            case GLCommandType::GLCMD_COLOR3F:
-            {
-                const auto* c = reinterpret_cast<const GLColor3fCommand*>(ipc_p);
-                m_color = { c->x, c->y, c->z, m_color.w };
-                break;
-            }
-            case GLCommandType::GLCMD_COLOR4F:
-            {
-                const auto* c = reinterpret_cast<const GLColor4fCommand*>(ipc_p);
-                m_color = { c->x, c->y, c->z, c->w };
-                break;
-            }
-            case GLCommandType::GLCMD_END:  // read vertices until GL_END is encountered at
-                                            // which point we will have reached end of geometry
-            {
-                end_primitive = true;
-                break;
-            }
-            default:  // TODO: Log error
-                break;
-        }
-
-        *offset += header->dataSize;  // move past data to next command
-
-        if (end_primitive)
-        {
-            break;
-        }
-    }
-
-    // determine indices based on specified topology and reserve space
-    if (topology == GLTopology::GL_QUAD_STRIP)
-    {
-        const size_t quad_count = t_vertices.size() >= 4 ? (t_vertices.size() - 2) / 2 : 0;
-        t_indices.reserve(quad_count * 6);
-
-        for (UINT32 k = 0; k + 3 < t_vertices.size(); k += 2)
-        {
-            UINT32 a = k + 0;
-            UINT32 b = k + 1;
-            UINT32 c = k + 2;
-            UINT32 d = k + 3;
-
-            t_indices.push_back(a);
-            t_indices.push_back(b);
-            t_indices.push_back(d);
-            t_indices.push_back(a);
-            t_indices.push_back(d);
-            t_indices.push_back(c);
-        }
-    }
-    else if (topology == GLTopology::GL_QUADS)
-    {
-        const size_t quad_count = t_vertices.size() / 4;
-        t_indices.reserve(quad_count * 6);
-
-        for (UINT32 k = 0; k + 3 < t_vertices.size(); k += 4)
-        {
-            UINT32 a = k + 0;
-            UINT32 b = k + 1;
-            UINT32 c = k + 2;
-            UINT32 d = k + 3;
-
-            t_indices.push_back(a);
-            t_indices.push_back(b);
-            t_indices.push_back(c);
-            t_indices.push_back(a);
-            t_indices.push_back(c);
-            t_indices.push_back(d);
-        }
-    }
-
-    // hashing - logic from boost::hash_combine
-    size_t seed = 0;
-    auto hash_combine = [&seed](auto const& v)
-    {
-        seed ^= std::hash<std::decay_t<decltype(v)>>{}(v) + 0x9e3779b97f4a7c15ULL + (seed << 6)
-                + (seed >> 2);
-    };
-
-    // reduces floating point instability
-    auto quantize = [](const float v, const float precision = 1e-5f) -> float
-    { return std::round(v / precision) * precision; };
-
-    // get vertex data to hash
-    for (int i = 0; i < t_vertices.size(); ++i)
-    {
-        const Vertex& vertex = t_vertices[i];
-        hash_combine(quantize(vertex.position.x));
-        hash_combine(quantize(vertex.position.y));
-        hash_combine(quantize(vertex.position.z));
-        hash_combine(quantize(vertex.color.x));
-        hash_combine(quantize(vertex.color.y));
-        hash_combine(quantize(vertex.color.z));
-    }
-
-    // get index data to hash
-    for (int i = 0; i < t_indices.size(); ++i)
-    {
-        const UINT32& index = t_indices[i];
-        hash_combine(index);
-    }
-
-    // check if hash exists
-    UINT64 hash = seed;
-
-    MeshRecord* mesh;
-    if (m_mesh_map.contains(hash))
-    {
-        mesh = &m_mesh_map[hash];
-    }
-    else
-    {
-        MeshRecord new_mesh;
-
-        // Store pending geometry for deferred BLAS building
-        PendingGeometry pending;
-        pending.vertices = std::move(t_vertices);
-        pending.indices = std::move(t_indices);
-        pending.hash = hash;
-        pending.mat_idx = static_cast<UINT32>(m_materials.size());
-        pending.mv_idx = static_cast<UINT32>(m_matrix_pool.size());
-
-        new_mesh.blas_vb_ib_idx = m_mesh_resources.size() + m_pending_geometries.size();
-
-        m_mesh_map.emplace(hash, new_mesh);
-
-        m_pending_geometries.push_back(std::move(pending));
-
-        mesh = &m_mesh_map[hash];
-    }
-
-    // Assign per-instance data (not cached)
-    mesh->mat_idx = static_cast<UINT32>(m_materials.size());
-    // Store the current state of the material in the materials buffer
-    // TODO: Modifying materials?
-    m_materials.push_back(m_material);
-
-    mesh->mv_idx = static_cast<UINT32>(m_matrix_pool.size());
-
-    m_matrix_pool.push_back(m_matrix_stack.top(gl::GLMatrixMode::MODELVIEW));
-
-    mesh->last_frame = m_current_frame;
-
-    // Temporary fix?
-    // TODO: Proper fix to consider display list compilation modes
-    if (call_list || list_mode_ != gl::GLListMode::COMPILE)
-    {
-        // This is ok because it is a small struct
-        m_meshes.push_back(*mesh);
-    }
-}
-
 void glRemix::glRemixRenderer::create_pending_buffers(ID3D12GraphicsCommandList7* cmd_list)
 {
-    if (m_pending_geometries.empty())
+    glState& state = m_driver.get_state();
+    if (state.m_pending_geometries.empty())
     {
         return;
     }
@@ -899,9 +347,9 @@ void glRemix::glRemixRenderer::create_pending_buffers(ID3D12GraphicsCommandList7
     const size_t start_idx = m_mesh_resources.size();
 
     // Create all vertex and index buffers first
-    for (size_t i = 0; i < m_pending_geometries.size(); ++i)
+    for (size_t i = 0; i < state.m_pending_geometries.size(); ++i)
     {
-        auto& pending = m_pending_geometries[i];
+        auto& pending = state.m_pending_geometries[i];
         MeshResources resource;
 
         // Create vertex buffer
@@ -945,15 +393,15 @@ void glRemix::glRemixRenderer::create_pending_buffers(ID3D12GraphicsCommandList7
         MeshRecord cached_mesh{};
         cached_mesh.mesh_id = pending.hash;
         cached_mesh.blas_vb_ib_idx = resource_idx;
-        m_mesh_map[pending.hash] = cached_mesh;
+        state.m_mesh_map[pending.hash] = cached_mesh;  // actually modifies driver state
 
         m_mesh_resources.push_back(std::move(resource));
     }
 
     // Build all BLAS in a single batch
-    build_mesh_blas_batch(start_idx, m_pending_geometries.size(), cmd_list);
+    build_mesh_blas_batch(start_idx, state.m_pending_geometries.size(), cmd_list);
 
-    m_pending_geometries.clear();
+    state.m_pending_geometries.clear();
 }
 
 void glRemix::glRemixRenderer::build_mesh_blas_batch(const size_t start_idx, const size_t count,
@@ -1145,9 +593,10 @@ static D3D12_RAYTRACING_INSTANCE_DESC mv_to_instance_desc(const XMFLOAT4X4& mv)
 // builds top level acceleration structure with blas buffer (can be called each frame likely)
 void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
 {
+    glState state = m_driver.get_state();
     // create an instance descriptor for all geometry
     // TODO: Check if this truncates size_t -> UINT
-    const UINT instance_count = static_cast<UINT>(m_meshes.size());  // this frame's meshes
+    const UINT instance_count = static_cast<UINT>(state.m_meshes.size());  // this frame's meshes
 
     if (instance_count == 0)
     {
@@ -1163,14 +612,12 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
     }
     for (UINT i = 0; i < instance_count; i++)
     {
-        const MeshRecord& mesh = m_meshes[i];
-
-        assert(mesh.mv_idx < m_matrix_pool.size());
+        const MeshRecord& mesh = state.m_meshes[i];
 
         const auto blas_addr = m_mesh_resources[mesh.blas_vb_ib_idx].blas.get_gpu_address();
         assert(blas_addr);
 
-        D3D12_RAYTRACING_INSTANCE_DESC desc = mv_to_instance_desc(m_matrix_pool[mesh.mv_idx]);
+        D3D12_RAYTRACING_INSTANCE_DESC desc = mv_to_instance_desc(state.m_matrix_pool[mesh.mv_idx]);
 
         desc.InstanceID = i;
         desc.InstanceMask = 0xFF;
@@ -1260,9 +707,18 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
 void glRemix::glRemixRenderer::render()
 {
     // Read GL stream and set resources accordingly
-    read_gl_command_stream();
+    glState& state = m_driver.get_state();
+    state.m_num_mesh_resources
+        = m_mesh_resources
+              .size();  // required for setting mesh record pointers properly within driver
+    m_driver.process_stream();
 
-    while (m_materials.size() > m_material_buffers.size() * MATERIALS_PER_BUFFER)
+    if (state.m_create_context)
+    {
+        create_swapchain_and_rts(state.hwnd);
+    }
+
+    while (state.m_materials.size() > m_material_buffers.size() * MATERIALS_PER_BUFFER)
     {
         // TODO: Issue huge warning when this happens
         create_material_buffer();
@@ -1279,11 +735,11 @@ void glRemix::glRemixRenderer::render()
         void* mat_ptr;
         THROW_IF_FALSE(m_context.map_buffer(&mat_buffer.buffer, &mat_ptr));
         const auto start_idx = i * MATERIALS_PER_BUFFER;
-        assert(!u64_overflows_u32(m_materials.size()));
+        assert(!u64_overflows_u32(state.m_materials.size()));
         const auto end_idx = std::min(start_idx + MATERIALS_PER_BUFFER,
-                                      static_cast<UINT>(m_materials.size()));
+                                      static_cast<UINT>(state.m_materials.size()));
         const auto mat_count = end_idx - start_idx;
-        memcpy(mat_ptr, m_materials.data() + start_idx, sizeof(Material) * mat_count);
+        memcpy(mat_ptr, state.m_materials.data() + start_idx, sizeof(Material) * mat_count);
         m_context.unmap_buffer(&mat_buffer.buffer);
     }
 
@@ -1291,7 +747,7 @@ void glRemix::glRemixRenderer::render()
     {
         void* light_ptr;
         THROW_IF_FALSE(m_context.map_buffer(&m_light_buffer[get_frame_index()].buffer, &light_ptr));
-        memcpy(light_ptr, m_lights.data(), sizeof(Light) * m_lights.size());
+        memcpy(light_ptr, state.m_lights.data(), sizeof(Light) * state.m_lights.size());
         m_context.unmap_buffer(&m_light_buffer[get_frame_index()].buffer);
     }
 
@@ -1339,7 +795,7 @@ void glRemix::glRemixRenderer::render()
     // This is done in place on the per frame vector of MeshRecords
     static std::vector<GPUMeshRecord> gpu_mesh_records_to_copy;
     gpu_mesh_records_to_copy.clear();
-    for (auto& mesh : m_meshes)
+    for (auto& mesh : state.m_meshes)
     {
         // InstanceID will be used to access GPUMeshRecord in shader
         GPUMeshRecord gpu_mesh;
@@ -1390,7 +846,7 @@ void glRemix::glRemixRenderer::render()
 
     // Dispatch rays to UAV render target
     {
-        XMMATRIX proj = XMLoadFloat4x4(&m_matrix_stack.top(gl::GLMatrixMode::PROJECTION));
+        XMMATRIX proj = XMLoadFloat4x4(&state.m_matrix_stack.top(GL_PROJECTION));
 
         XMMATRIX inv_proj = XMMatrixInverse(nullptr, proj);
 
@@ -1615,6 +1071,15 @@ void glRemix::glRemixRenderer::render()
 void glRemix::glRemixRenderer::destroy()
 {
     m_context.destroy_imgui();
+}
+
+void glRemix::glRemixRenderer::create_swapchain_and_rts(HWND hwnd)
+{
+    THROW_IF_FALSE(m_context.create_swapchain(hwnd, &m_gfx_queue, &m_frame_index));
+    THROW_IF_FALSE(
+        m_context.create_swapchain_descriptors(m_swapchain_descriptors.data(), &m_rtv_heap));
+    THROW_IF_FALSE(m_context.init_imgui());
+    create_uav_rt();
 }
 
 void glRemix::glRemixRenderer::create_uav_rt()

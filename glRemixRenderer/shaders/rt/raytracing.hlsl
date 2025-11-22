@@ -140,7 +140,7 @@ float3 transform_to_world(float3 local_dir, float3 N)
     bary.x = 1.0f - bary.y - bary.z;
 
     // Interpolate attributes
-    float3 albedo = v0.color * bary.x + v1.color * bary.y + v2.color * bary.z;
+    float3 albedo = v0.color.rgb * bary.x + v1.color.rgb * bary.y + v2.color.rgb * bary.z;
     float3 n_obj = normalize(v0.normal * bary.x + v1.normal * bary.y + v2.normal * bary.z);
 
     // Transform normal to world space (assumes uniform scale)

@@ -1,7 +1,4 @@
 #pragma once
-#include <cassert>
-
-#include "d3d12_descriptor_heap.h"
 
 namespace glRemix::dx
 {
