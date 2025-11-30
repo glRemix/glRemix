@@ -9907,7 +9907,7 @@ ImGuiKeyData* ImGui::GetKeyData(ImGuiContext* ctx, ImGuiKey key)
     if (key & ImGuiMod_Mask_)
         key = ConvertSingleModFlagToKey(key);
 
-    IM_ASSERT(IsNamedKey(key) && "Support for user key indices was dropped in favor of ImGuiKey. Please update backend & user Code.");
+    IM_ASSERT(IsNamedKey(key) && "Support for user key indices was dropped in favor of ImGuiKey. Please update backend & user code.");
     return &g.IO.KeysData[key - ImGuiKey_NamedKey_BEGIN];
 }
 
@@ -9942,7 +9942,7 @@ const char* ImGui::GetKeyName(ImGuiKey key)
 {
     if (key == ImGuiKey_None)
         return "None";
-    IM_ASSERT(IsNamedKeyOrMod(key) && "Support for user key indices was dropped in favor of ImGuiKey. Please update backend and user Code.");
+    IM_ASSERT(IsNamedKeyOrMod(key) && "Support for user key indices was dropped in favor of ImGuiKey. Please update backend and user code.");
     if (key & ImGuiMod_Mask_)
         key = ConvertSingleModFlagToKey(key);
     if (!IsNamedKey(key))
@@ -22122,11 +22122,11 @@ void ImGui::ShowMetricsWindow(bool* p_open)
 
         Checkbox("Show Debug Log", &cfg->ShowDebugLog);
         SameLine();
-        MetricsHelpMarker("You can also call ImGui::ShowDebugLogWindow() from your Code.");
+        MetricsHelpMarker("You can also call ImGui::ShowDebugLogWindow() from your code.");
 
         Checkbox("Show ID Stack Tool", &cfg->ShowIDStackTool);
         SameLine();
-        MetricsHelpMarker("You can also call ImGui::ShowIDStackToolWindow() from your Code.");
+        MetricsHelpMarker("You can also call ImGui::ShowIDStackToolWindow() from your code.");
 
         Checkbox("Show windows begin order", &cfg->ShowWindowsBeginOrder);
         Checkbox("Show windows rectangles", &cfg->ShowWindowsRects);
@@ -22199,7 +22199,7 @@ void ImGui::ShowMetricsWindow(bool* p_open)
 
         Checkbox("UTF-8 Encoding viewer", &cfg->ShowTextEncodingViewer);
         SameLine();
-        MetricsHelpMarker("You can also call ImGui::DebugTextEncoding() from your Code with a given string to test that your UTF-8 encoding settings are correct.");
+        MetricsHelpMarker("You can also call ImGui::DebugTextEncoding() from your code with a given string to test that your UTF-8 encoding settings are correct.");
         if (cfg->ShowTextEncodingViewer)
         {
             static char buf[64] = "";

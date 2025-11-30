@@ -288,7 +288,7 @@ static void ShowDockingDisabledMessage()
 {
     ImGuiIO& io = ImGui::GetIO();
     ImGui::Text("ERROR: Docking is not enabled! See Demo > Configuration.");
-    ImGui::Text("Set io.ConfigFlags |= ImGuiConfigFlags_DockingEnable in your Code, or ");
+    ImGui::Text("Set io.ConfigFlags |= ImGuiConfigFlags_DockingEnable in your code, or ");
     ImGui::SameLine(0.0f, 0.0f);
     if (ImGui::SmallButton("click here"))
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
@@ -456,7 +456,7 @@ void ImGui::ShowDemoWindow(bool* p_open)
                           "and Metrics/Debugger (general purpose Dear ImGui debugging tool).");
 
         ImGui::SeparatorText("PROGRAMMER GUIDE:");
-        ImGui::BulletText("See the ShowDemoWindow() Code in imgui_demo.cpp. <- you are here!");
+        ImGui::BulletText("See the ShowDemoWindow() code in imgui_demo.cpp. <- you are here!");
         ImGui::BulletText("See comments in imgui.cpp.");
         ImGui::BulletText("See example applications in the examples/ folder.");
         ImGui::BulletText("Read the FAQ at ");
@@ -1309,7 +1309,7 @@ static void DemoWindowWidgetsColorAndPickers()
         if (display_mode == 4) flags |= ImGuiColorEditFlags_DisplayHex;
         ImGui::ColorPicker4("MyColor##4", (float*)&color, flags, ref_color ? &ref_color_v.x : NULL);
 
-        ImGui::Text("Set defaults in Code:");
+        ImGui::Text("Set defaults in code:");
         ImGui::SameLine(); HelpMarker(
             "SetColorEditOptions() is designed to allow you to set boot-time default.\n"
             "We don't have Push/Pop functions because you can force options on a per-widget basis if needed, "
@@ -2730,7 +2730,7 @@ static void DemoWindowWidgetsSelectionAndMultiSelect(ImGuiDemoWindowData* demo_d
     IMGUI_DEMO_MARKER("Widgets/Selection State & Multi-Select");
     if (ImGui::TreeNode("Selection State & Multi-Select"))
     {
-        HelpMarker("Selections can be built using Selectable(), TreeNode() or other widgets. Selection state is owned by application Code/data.");
+        HelpMarker("Selections can be built using Selectable(), TreeNode() or other widgets. Selection state is owned by application code/data.");
 
         ImGui::BulletText("Wiki page:");
         ImGui::SameLine();
@@ -5040,7 +5040,7 @@ static void DemoWindowLayout()
         if (ImGui::IsItemActive())
             scroll_x_delta = -ImGui::GetIO().DeltaTime * 1000.0f;
         ImGui::SameLine();
-        ImGui::Text("Scroll from Code"); ImGui::SameLine();
+        ImGui::Text("Scroll from code"); ImGui::SameLine();
         ImGui::SmallButton(">>");
         if (ImGui::IsItemActive())
             scroll_x_delta = +ImGui::GetIO().DeltaTime * 1000.0f;
@@ -8073,8 +8073,8 @@ static void DemoWindowInputs()
             ImGui::TreePop();
         }
 
-        IMGUI_DEMO_MARKER("Inputs & Focus/Focus from Code");
-        if (ImGui::TreeNode("Focus from Code"))
+        IMGUI_DEMO_MARKER("Inputs & Focus/Focus from code");
+        if (ImGui::TreeNode("Focus from code"))
         {
             bool focus_1 = ImGui::Button("Focus on 1"); ImGui::SameLine();
             bool focus_2 = ImGui::Button("Focus on 2"); ImGui::SameLine();
@@ -8111,7 +8111,7 @@ static void DemoWindowInputs()
             if (focus_ahead != -1) ImGui::SetKeyboardFocusHere(focus_ahead);
             ImGui::SliderFloat3("Float3", &f3[0], 0.0f, 1.0f);
 
-            ImGui::TextWrapped("NB: Cursor & selection are preserved when refocusing last used item in Code.");
+            ImGui::TextWrapped("NB: Cursor & selection are preserved when refocusing last used item in code.");
             ImGui::TreePop();
         }
 
