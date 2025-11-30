@@ -1010,7 +1010,6 @@ void glRemix::glRemixRenderer::render()
               .size();  // required for setting mesh record pointers properly within driver
     state.m_num_textures = m_textures.size();
     m_texture_upload_buffers[get_frame_index()].clear();
-
     sm_driver.process_stream();
 
     if (state.m_create_context)
