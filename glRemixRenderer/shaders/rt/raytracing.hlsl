@@ -16,6 +16,7 @@ ConstantBuffer<LightCB> light_cb : register(b1);
 
 StructuredBuffer<GPUMeshRecord> meshes : register(t1);
 
+TextureCube<float4> environment_map : register(t2);
 SamplerState g_sampler : register(s0);
 
 // https://learn.microsoft.com/en-us/windows/win32/direct3d12/intersection-attributes
@@ -44,6 +45,59 @@ float3 transform_to_world(float3 local_dir, float3 N)
     float3 tangent = normalize(cross(up, N));
     float3 bitangent = cross(N, tangent);
     return normalize(local_dir.x * tangent + local_dir.y * bitangent + local_dir.z * N);
+}
+
+float3 direct_lighting(float3 hit_pos, float3 N, float3 albedo)
+{
+    float3 direct = 0.0f;
+
+    [unroll]
+    for (int i = 0; i < 8; ++i)
+    {
+        Light curr_light = light_cb.lights[i];
+        if (!curr_light.enabled)
+            continue;
+
+        float3 light_pos = curr_light.position.xyz;
+        float3 L = normalize(light_pos - hit_pos);
+        float dist = length(light_pos - hit_pos);
+
+        // attenuation
+        float attenuation = 1.0 /
+            (curr_light.constant_attenuation +
+             curr_light.linear_attenuation * dist +
+             curr_light.quadratic_attenuation * dist * dist);
+
+        float NdotL = max(dot(N, L), 0.0);
+
+        float3 ambient = albedo * curr_light.ambient.rgb;
+        float3 diffuse = albedo * curr_light.diffuse.rgb * NdotL;
+
+        direct += (ambient + diffuse) * attenuation;
+    }
+
+    return direct;
+}
+
+float compute_lod(float3 N, float3 viewDir, float dist)
+{
+    const float mipStartDist = 8.0f;
+    const float mipScale = 0.02f; // how fast LOD grows with distance
+
+    float lod = 0.0f;
+    if (dist > mipStartDist)
+    {
+        float d = (dist - mipStartDist) * mipScale;
+        lod = log2(max(d, 1e-4f));
+    }
+
+    float NdotV = abs(dot(N, viewDir));
+    float facing = saturate(NdotV);
+
+    float angleFactor = lerp(1.5f, 0.4f, facing);
+    lod *= angleFactor;
+
+    return lod;
 }
 
 [shader("raygeneration")]void RayGenMain()
@@ -81,13 +135,10 @@ float3 transform_to_world(float3 local_dir, float3 N)
 
         float3 sample_color = float3(0, 0, 0);
         float3 throughput = 1.0;
-        
-        RayPayload payload;
 
         for (uint bounce = 0; bounce < max_bounces; ++bounce)
         {
-            payload.color = float4(0, 0, 0, 0);
-            payload.normal = float3(0, 0, 0);
+            RayPayload payload;
             payload.hit = false;
 
             RayDesc ray;
@@ -96,23 +147,33 @@ float3 transform_to_world(float3 local_dir, float3 N)
             ray.TMin = 0.001;
             ray.TMax = 10000.0;
 
-        // Note winding order if you don't see anything
-        TraceRay(scene, RAY_FLAG_NONE, ~0, 0, 1, 0, ray, payload);
+            // Note winding order if you don't see anything
+            TraceRay(scene, RAY_FLAG_NONE, ~0, 0, 1, 0, ray, payload);
 
             if (!payload.hit)
             {
-                // same as miss shader
+                // env hit (treat payload.color as radiance)
                 sample_color += throughput * payload.color.rgb;
                 break;
             }
 
-            sample_color += throughput * payload.color.rgb;
-
+            float3 N = normalize(payload.normal);
+            float3 albedo = payload.color.rgb;
+            float3 hit_pos = payload.hit_pos;
+            
+            // direct lighting contribution on first bounce
+            if (bounce == 0)
+            {
+                float3 direct = direct_lighting(hit_pos, N, albedo);
+                sample_color += throughput * direct;
+            }
+            
             float2 xi = float2(rand(seed), rand(seed));
             float3 local_dir = cosine_sample_hemisphere(xi);
-            float3 N = normalize(payload.normal);
             float3 new_dir = transform_to_world(local_dir, N);
 
+            throughput *= albedo;
+            
             ray_dir = new_dir;
             origin = payload.hit_pos + ray_dir * 0.001f;
         }
@@ -158,7 +219,7 @@ float3 transform_to_world(float3 local_dir, float3 N)
 
     // Interpolate attributes
     float2 uv = v0.uv * bary.x + v1.uv * bary.y + v2.uv * bary.z;
-    float3 albedo = v0.color.rgb * bary.x + v1.color.rgb * bary.y + v2.color.rgb * bary.z;
+    float3 vertex_color = v0.color.rgb * bary.x + v1.color.rgb * bary.y + v2.color.rgb * bary.z;
     float3 n_obj = normalize(v0.normal * bary.x + v1.normal * bary.y + v2.normal * bary.z);
 
     // Transform normal to world space (assumes uniform scale)
@@ -188,51 +249,79 @@ float3 transform_to_world(float3 local_dir, float3 N)
     if (mesh.tex_idx != 0xFFFFFFFFu)
     {
         Texture2D tex = ResourceDescriptorHeap[NonUniformResourceIndex(mesh.tex_idx)];
-        float4 tex_sample = tex.SampleLevel(g_sampler, uv, 0.0f);
+        
+        float3 V = -normalize(WorldRayDirection());
+        float3 N = normalize(n_world);
+        float dist = RayTCurrent();
+        
+        float lod = compute_lod(N, V, dist);
+
+        float4 tex_sample = tex.SampleLevel(g_sampler, uv, lod);
         tex_albedo = tex_sample.rgb;
     }
-        
-    float3 final_color = float3(0, 0, 0);
     
-    // iterate through lights
-    for (int i = 0; i < 8; ++i)
+    bool has_vertex = dot(vertex_color, vertex_color) > 1e-4;
+    bool has_tex = mesh.tex_idx != 0xFFFFFFFFu && dot(tex_albedo, tex_albedo) > 1e-4;
+    bool has_mat_diff = dot(mat.diffuse.rgb, mat.diffuse.rgb) > 1e-4;
+    
+    float3 base = float3(1, 1, 1);
+    
+    if (has_tex)
     {
-        Light curr_light = light_cb.lights[i];
-        if (!curr_light.enabled)
+        base = tex_albedo;
+        
+        if (has_vertex)
         {
-            continue;
+            base *= vertex_color;
         }
-        
-        float3 light_pos = curr_light.position.xyz;
-        float3 light_dir = normalize(light_pos - hit_pos);
-        float light_dist = length(light_pos - hit_pos);
-        
-        // attenuation
-        float attenuation = 1.0 /
-            ((curr_light.constant_attenuation) +
-             (curr_light.linear_attenuation * light_dist) +
-             (curr_light.quadratic_attenuation * light_dist * light_dist));
-
-        // diffuse
-        float n_dot_l = max(dot(n_world, light_dir), 0.0);
-        float3 diffuse = mat.diffuse.rgb * tex_albedo * curr_light.diffuse.rgb * albedo * n_dot_l;
-        
-        // ambient
-        float3 ambient = mat.ambient.rgb * tex_albedo * curr_light.ambient.rgb * albedo;
-
-        float3 color = (diffuse + ambient) * attenuation;
-        final_color += color;
     }
+    else
+    {
+        if (has_vertex)
+        {
+            base *= vertex_color;
+        }
+        if (has_mat_diff)
+        {
+            base *= mat.diffuse.rgb;
+        }
+    }
+    
+    
+    if (dot(base, base) < 1e-6)
+    {
+        if (has_tex)
+        {
+            base = tex_albedo;
+        }
+        else if (has_mat_diff)
+        {
+            base = mat.diffuse.rgb;
+        }
+        else if (has_vertex)
+        {
+            base = vertex_color;
+        }
+        else
+        {
+            base = float3(1.0, 1.0, 1.0);
 
+        }
+    }
+    
     payload.hit_pos = hit_pos;
     payload.normal = n_world;
     payload.hit = true;
-    payload.color = float4(final_color, 1.0);
+    payload.color = float4(base, 1.0);
 }
 
 
 [shader("miss")]void MissMain(inout RayPayload payload)
 {
-    payload.color = float4(0.0, 0.0, 0.0, 1.0);
+    float3 dir = normalize(WorldRayDirection());
+    float3 env_color = environment_map.SampleLevel(g_sampler, dir, 0.0f).rgb;
+
+    float intensity = 1.0f;
     payload.hit = false;
+    payload.color = float4(env_color * intensity, 1.0f);
 }

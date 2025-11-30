@@ -107,12 +107,11 @@ static void hash_and_commit_geometry(glState& state, const size_t* client_indice
 
     if (state.m_texture_2d)
     {
-        auto& map = state.m_texture_indices;
-        auto it = map.find(state.m_texture_index);
-        if (it != map.end())
-        {
-            mesh->tex_idx = it->second;
-        }
+        mesh->tex_idx = state.m_bound_texture;
+    }
+    else
+    {
+        mesh->tex_idx = 0xFFFFFFFFu;
     }
 
     mesh->last_frame = state.m_current_frame;
@@ -491,16 +490,14 @@ static void handle_end_list(const GLCommandContext& ctx, const void* data)
 static void handle_bind_texture(const GLCommandContext& ctx, const void* data)
 {
     const auto* cmd = static_cast<const GLBindTextureCommand*>(data);
-    ctx.state.m_texture_index = cmd->texture;
+    ctx.state.m_bound_texture = cmd->texture;
 }
 
 static void handle_delete_textures(const GLCommandContext& ctx, const void* data)
 {
     const auto* cmd = static_cast<const GLDeleteTexturesCommand*>(data);
 
-    UINT32 index = ctx.state.m_texture_indices[cmd->n];
-
-    // TODO (delete textures)
+    // the com pointer will simply be dropped
 }
 
 static void handle_tex_image_2d(const GLCommandContext& ctx, const void* data)
@@ -510,22 +507,73 @@ static void handle_tex_image_2d(const GLCommandContext& ctx, const void* data)
     const auto* bytes = static_cast<const UINT8*>(data);
     const void* data_ptr = bytes + sizeof(GLTexImage2DCommand);
 
-    PendingTexture tex;
-    tex.desc = { cmd->width,
-                 cmd->height,
-                 1,  // depth of array size is always 1 (gl does not support non 2d)
-                 1,
-                 gl_format_to_dxgi(cmd->internalFormat, cmd->format, cmd->type),
-                 D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-                 false };
-    tex.pixels = data_ptr;
-
     glState& state = ctx.state;
-    const UINT32 global_tex_index = state.m_num_textures
-                                    + static_cast<UINT32>(state.m_pending_textures.size());
-    state.m_texture_indices[state.m_texture_index] = global_tex_index;
+    const UINT32 gl_tex = state.m_bound_texture;
 
-    state.m_pending_textures.push_back(std::move(tex));
+    PendingTexture& tex = state.m_pending_textures[gl_tex];
+    tex.index = gl_tex;
+
+    const UINT32 level = cmd->level;
+    const UINT32 width = static_cast<UINT32>(cmd->width);
+    const UINT32 height = static_cast<UINT32>(cmd->height);
+    const DXGI_FORMAT fmt = gl_format_to_dxgi(cmd->format, cmd->type);
+
+    // initialize base-level desc
+    if (tex.levels.empty())
+    {
+        tex.desc = {
+            width,
+            height,
+            1,       // depth_or_array_size
+            1,       // mip_levels
+            fmt,    D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+            false   // not render target
+        };
+    }
+
+    if (tex.levels.size() <= level)
+    {
+        tex.levels.resize(level + 1);
+    }
+
+    PendingTextureLevel& lvl = tex.levels[level];
+    lvl.width = width;
+    lvl.height = height;
+
+    // RGB + GL_UNSIGNED_BYTE doesn't exist so need to fill with alpha value
+    const bool to_rgba = (cmd->format == GL_RGB) && (cmd->type == GL_UNSIGNED_BYTE);
+
+    const size_t pixel_count = size_t(width) * size_t(height);
+    const size_t dst_bpp = 4; // TODO add additional cases (currently just RGBA)
+
+    lvl.pixels.resize(pixel_count * dst_bpp);
+
+    if (to_rgba)
+    {
+        const auto* src = static_cast<const UINT8*>(data_ptr);
+        auto* dst = lvl.pixels.data();
+
+        for (size_t i = 0; i < pixel_count; ++i)
+        {
+            const size_t src_idx = i * 3;
+            const size_t dst_idx = i * 4;
+
+            dst[dst_idx + 0] = src[src_idx + 0];
+            dst[dst_idx + 1] = src[src_idx + 1];
+            dst[dst_idx + 2] = src[src_idx + 2];
+            dst[dst_idx + 3] = 255;
+        }
+    }
+    else
+    {
+        const size_t src_bpp = dst_bpp; // TODO add additional cases
+        const auto* src = static_cast<const UINT8*>(data_ptr);
+        auto* dst = lvl.pixels.data();
+        memcpy(dst, src, pixel_count * src_bpp);
+    }
+
+    tex.index = state.m_bound_texture;
+    tex.max_level = std::max(tex.max_level, level);
 }
 
 static void handle_tex_param(const GLCommandContext& ctx, const void* data)

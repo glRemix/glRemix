@@ -34,7 +34,7 @@ inline XMFLOAT4 f_to_xmf4(const float f)
     return fv_to_xmf4(GLVec4f{ f, f, f, f });
 }
 
-DXGI_FORMAT gl_format_to_dxgi(UINT32 internalFormat, UINT32 format, UINT32 type)
+DXGI_FORMAT gl_format_to_dxgi(UINT32 format, UINT32 type)
 {
     // promote GL_BYTE, GL_INT, GL_UNSIGNED_INT to float for now
     if (type == GL_FLOAT || type == GL_BYTE || type == GL_INT || type == GL_UNSIGNED_INT)
@@ -42,6 +42,9 @@ DXGI_FORMAT gl_format_to_dxgi(UINT32 internalFormat, UINT32 format, UINT32 type)
         switch (format)
         {
             case GL_RED:
+            case GL_GREEN:
+            case GL_BLUE:
+            case GL_ALPHA:
             case GL_LUMINANCE: return DXGI_FORMAT_R32_FLOAT;
             case GL_LUMINANCE_ALPHA: return DXGI_FORMAT_R32G32_FLOAT;
             case GL_RGB: return DXGI_FORMAT_R32G32B32_FLOAT;
@@ -55,6 +58,9 @@ DXGI_FORMAT gl_format_to_dxgi(UINT32 internalFormat, UINT32 format, UINT32 type)
         switch (format)
         {
             case GL_RED:
+            case GL_GREEN:
+            case GL_BLUE:
+            case GL_ALPHA:
             case GL_LUMINANCE: return DXGI_FORMAT_R8_UNORM;
             case GL_LUMINANCE_ALPHA: return DXGI_FORMAT_R8G8_UNORM;
             case GL_RGB: return DXGI_FORMAT_R8G8B8A8_UNORM;

@@ -59,11 +59,30 @@ struct PendingGeometry
     UINT32 replace_idx = -1;
 };
 
+struct PendingTextureLevel
+{
+    UINT32 width = 0;
+    UINT32 height = 0;
+    std::vector<uint8_t> pixels;
+};
+
 struct PendingTexture
 {
     UINT32 index;
     dx::TextureDesc desc;
-    const void* pixels;
+    UINT32 max_level = 0;
+    std::vector<PendingTextureLevel> levels;
+};
+
+struct DDS
+{
+    uint32_t width;
+    uint32_t height;
+    uint32_t mip_levels;
+    uint32_t array_size;
+    DXGI_FORMAT format;
+    bool is_cubemap;
+    std::vector<uint8_t> pixels;
 };
 
 }  // namespace glRemix
