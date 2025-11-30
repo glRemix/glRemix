@@ -57,8 +57,10 @@ class glRemixRenderer : public Application
     UINT64 m_miss_shader_table_offset{};
     UINT64 m_hit_group_shader_table_offset{};
 
-    dx::D3D12Texture m_uav_rt{};
-    dx::D3D12Descriptor m_uav_rt_descriptor{};
+    TextureAndDescriptor m_color_rt{};
+    TextureAndDescriptor m_normal_roughness_rt{};
+    TextureAndDescriptor m_motion_rt{};
+    TextureAndDescriptor m_z_view_rt{};
 
     // This is written to by CPU potentially in two consecutive frames so we need to double buffer it
     FreeListVector<std::array<BufferAndDescriptor, m_frames_in_flight>> m_gpu_meshrecord_buffers;
@@ -84,6 +86,8 @@ class glRemixRenderer : public Application
 
     DebugWindow m_debug_window;
 
+    ViewProjMatrices m_prev_matrices{};
+
     void create_material_buffer();
     void create_mesh_record_buffer();
 
@@ -92,7 +96,7 @@ class glRemixRenderer : public Application
     UINT m_current_frame = 0;
 
     void create_swapchain_and_rts(HWND hwnd);
-    void create_uav_rt();
+    void create_render_targets();
     UINT64 create_hash(std::vector<Vertex> vertices, std::vector<UINT32> indices);
 
     // This should only be called from create_pending_buffers

@@ -143,10 +143,10 @@ void glRemix::glRemixRenderer::create()
             .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
         };
 
-        // Output UAV at u0
+        // Output UAVs at u0-u3 (color, normal_roughness, motion_vectors, z_view)
         descriptor_ranges[1] = {
             .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV,
-            .NumDescriptors = 1,
+            .NumDescriptors = 4,
             .BaseShaderRegister = 0,
             .RegisterSpace = 0,
             .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
@@ -388,7 +388,6 @@ void glRemix::glRemixRenderer::create_pending_buffers(ID3D12GraphicsCommandList7
     {
         auto& pending = state.m_pending_geometries[i];
         MeshResources resource;
-
         // Create vertex buffer
         auto& vb = resource.vertex_buffer;
         dx::BufferDesc vertex_buffer_desc{
@@ -795,6 +794,11 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
                                                &resource.vertex_buffer.descriptor);
             m_descriptor_pager.free_descriptor(dx::DescriptorPager::VB_IB,
                                                &resource.index_buffer.descriptor);
+            // Mark buffers/BLAS as invalid
+            resource.vertex_buffer.buffer.desc.size = 0;
+            resource.index_buffer.buffer.desc.size = 0;
+            resource.blas.desc.size = 0;
+
             it = state.m_mesh_map.erase(it);
 
             // erase mesh from m_meshes and get its index for m_mesh_replacement_tracker
@@ -888,10 +892,7 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
     // TODO: Check if this truncates size_t -> UINT
     const UINT instance_count = static_cast<UINT>(state.m_meshes.size());  // this frame's meshes
 
-    if (instance_count == 0)
-    {
-        return;
-    }
+    assert(instance_count > 0);
 
     // TODO: Replace with arena allocator
     static std::vector<D3D12_RAYTRACING_INSTANCE_DESC> instance_descs(instance_count);
@@ -1110,16 +1111,17 @@ void glRemix::glRemixRenderer::render()
 
     // replace meshes in m_meshes if applicable
     handle_per_frame_replacement();
-    // Currently reserve TLAS, 1 UAV RT, 2 CBV
-    constexpr auto reserved_descriptor_offset = 4;
+    // Currently reserve TLAS, 4 UAV RTs, 2 CBV
+    constexpr auto reserved_descriptor_offset = 7;
     // Update mesh records vector with global indices based off current paging status
     // This is done in place on the per frame vector of MeshRecords
     static std::vector<GPUMeshRecord> gpu_mesh_records_to_copy;
     gpu_mesh_records_to_copy.clear();
+
     for (auto& mesh : state.m_meshes)
     {
         // InstanceID will be used to access GPUMeshRecord in shader
-        GPUMeshRecord gpu_mesh;
+        GPUMeshRecord gpu_mesh{};
         // Materials
         {
             auto buffer_index = mesh.mat_idx / MATERIALS_PER_BUFFER;
@@ -1160,6 +1162,22 @@ void glRemix::glRemixRenderer::render()
                 gpu_mesh.tex_idx = tex_desc_offset + tex_offset + reserved_descriptor_offset;
             }
         }
+        // Previous transform for motion vectors
+        {
+            auto current_transform = state.m_matrix_pool[mesh.mv_idx];
+
+            XMFLOAT3X4 current = { current_transform._11, current_transform._12,
+                                   current_transform._13, current_transform._41,
+                                   current_transform._21, current_transform._22,
+                                   current_transform._23, current_transform._42,
+                                   current_transform._31, current_transform._32,
+                                   current_transform._33, current_transform._43 };
+
+            gpu_mesh.curr_obj_to_world = current;
+            gpu_mesh.prev_obj_to_world = state.m_mesh_map[mesh.mesh_id].prev_transform;
+
+            state.m_mesh_map[mesh.mesh_id].prev_transform = current;
+        }
         gpu_mesh_records_to_copy.push_back(gpu_mesh);
     }
 
@@ -1182,29 +1200,33 @@ void glRemix::glRemixRenderer::render()
     m_descriptor_pager.copy_pages_to_gpu(m_context, &m_GPU_descriptor_heap,
                                          reserved_descriptor_offset);
 
-    // Build TLAS
-    build_tlas(cmd_list.Get());
-
     // Dispatch rays to UAV render target
     if (!state.m_meshes.empty())
     {
-        float fov = XM_PIDIV2;  // 90 degrees
-        float aspect = float(win_dims.x) / float(win_dims.y);
-        float nearZ = 0.1f;
-        float farZ = 1000.0f;
+        build_tlas(cmd_list.Get());
+        // float fov = XM_PIDIV2;  // 90 degrees
+        // float aspect = float(win_dims.x) / float(win_dims.y);
+        // float nearZ = 0.1f;
+        // float farZ = 1000.0f;
 
-        XMMATRIX proj = XMMatrixPerspectiveFovRH(fov, aspect, nearZ, farZ);
+        // XMMATRIX proj = XMMatrixPerspectiveFovRH(fov, aspect, nearZ, farZ);
 
-        // XMMATRIX proj = XMLoadFloat4x4(&state.m_matrix_stack.top(GL_PROJECTION));
+        XMMATRIX proj = XMLoadFloat4x4(&state.m_matrix_stack.top(GL_PROJECTION));
 
         XMMATRIX inv_proj = XMMatrixInverse(nullptr, proj);
 
         RayGenConstantBuffer raygen_cb{
-            .width = static_cast<float>(win_dims.x),
-            .height = static_cast<float>(win_dims.y),
+            .dimensions = { win_dims.x, win_dims.y },
         };
-        XMStoreFloat4x4(&raygen_cb.view_proj, XMMatrixTranspose(proj));
-        XMStoreFloat4x4(&raygen_cb.inv_view_proj, XMMatrixTranspose(inv_proj));
+
+        XMStoreFloat4x4(&raygen_cb.current.view_proj, XMMatrixTranspose(proj));
+        XMStoreFloat4x4(&raygen_cb.current.inv_view_proj, XMMatrixTranspose(inv_proj));
+
+        raygen_cb.previous.view_proj = m_prev_matrices.view_proj;
+        raygen_cb.previous.inv_view_proj = m_prev_matrices.inv_view_proj;
+
+        XMStoreFloat4x4(&m_prev_matrices.view_proj, XMMatrixTranspose(proj));
+        XMStoreFloat4x4(&m_prev_matrices.inv_view_proj, XMMatrixTranspose(inv_proj));
 
         // Copy constant buffer to GPU
         auto raygen_cb_ptr = &m_raygen_constant_buffers[get_frame_index()];
@@ -1213,9 +1235,13 @@ void glRemix::glRemixRenderer::render()
         memcpy(cb_ptr, &raygen_cb, sizeof(RayGenConstantBuffer));
         m_context.unmap_buffer(raygen_cb_ptr);
 
-        // Mark UAV texture for raytracing use and emit barrier
-        THROW_IF_FALSE(m_context.mark_use(&m_uav_rt, dx::Usage::UAV_RT));
-        std::array rt_textures = { &m_uav_rt };
+        // Mark UAV textures for raytracing use and emit barriers
+        THROW_IF_FALSE(m_context.mark_use(&m_color_rt.texture, dx::Usage::UAV_RT));
+        THROW_IF_FALSE(m_context.mark_use(&m_normal_roughness_rt.texture, dx::Usage::UAV_RT));
+        THROW_IF_FALSE(m_context.mark_use(&m_motion_rt.texture, dx::Usage::UAV_RT));
+        THROW_IF_FALSE(m_context.mark_use(&m_z_view_rt.texture, dx::Usage::UAV_RT));
+        std::array rt_textures = { &m_color_rt.texture, &m_normal_roughness_rt.texture,
+                                   &m_motion_rt.texture, &m_z_view_rt.texture };
         m_context.emit_barriers(cmd_list.Get(), nullptr, 0, rt_textures.data(), rt_textures.size());
 
         // Bind descriptor heap(s) before setting the root signature when using DIRECTLY_INDEXED
@@ -1231,9 +1257,15 @@ void glRemix::glRemixRenderer::render()
         };
         // TLAS
         m_context.copy_descriptors(gpu_heap, m_tlas_descriptor, 1);
-        // UAV RT
+        // UAV RTs
         ++gpu_heap.offset;
-        m_context.copy_descriptors(gpu_heap, m_uav_rt_descriptor, 1);
+        m_context.copy_descriptors(gpu_heap, m_color_rt.descriptor, 1);
+        ++gpu_heap.offset;
+        m_context.copy_descriptors(gpu_heap, m_normal_roughness_rt.descriptor, 1);
+        ++gpu_heap.offset;
+        m_context.copy_descriptors(gpu_heap, m_motion_rt.descriptor, 1);
+        ++gpu_heap.offset;
+        m_context.copy_descriptors(gpu_heap, m_z_view_rt.descriptor, 1);
         // Raygen CBV
         ++gpu_heap.offset;
         m_context.copy_descriptors(gpu_heap, m_raygen_cbv_descriptors[get_frame_index()], 1);
@@ -1289,8 +1321,8 @@ void glRemix::glRemixRenderer::render()
         };
 
         // Transition UAV texture from UAV to copy source
-        THROW_IF_FALSE(m_context.mark_use(&m_uav_rt, dx::Usage::COPY_SRC));
-        std::array copy_textures = { &m_uav_rt };
+        THROW_IF_FALSE(m_context.mark_use(&m_color_rt.texture, dx::Usage::COPY_SRC));
+        std::array copy_textures = { &m_color_rt.texture };
         m_context.emit_barriers(cmd_list.Get(), nullptr, 0, copy_textures.data(),
                                 copy_textures.size());
 
@@ -1312,7 +1344,7 @@ void glRemix::glRemixRenderer::render()
         };
         cmd_list->Barrier(1, &swap_barrier_group);
 
-        m_context.copy_texture_to_swapchain(cmd_list.Get(), m_uav_rt);
+        m_context.copy_texture_to_swapchain(cmd_list.Get(), m_color_rt.texture);
 
         // Transition swapchain from COPY_DEST to RENDER_TARGET
         D3D12_TEXTURE_BARRIER swap_to_rtv{
@@ -1333,8 +1365,8 @@ void glRemix::glRemixRenderer::render()
         cmd_list->Barrier(1, &swap_rtv_barrier_group);
 
         // Transition UAV back to UAV layout for next frame
-        THROW_IF_FALSE(m_context.mark_use(&m_uav_rt, dx::Usage::UAV_RT));
-        std::array post_copy_textures = { &m_uav_rt };
+        THROW_IF_FALSE(m_context.mark_use(&m_color_rt.texture, dx::Usage::UAV_RT));
+        std::array post_copy_textures = { &m_color_rt.texture };
         m_context.emit_barriers(cmd_list.Get(), nullptr, 0, post_copy_textures.data(),
                                 post_copy_textures.size());
     }
@@ -1427,15 +1459,15 @@ void glRemix::glRemixRenderer::create_swapchain_and_rts(HWND hwnd)
     THROW_IF_FALSE(
         m_context.create_swapchain_descriptors(m_swapchain_descriptors.data(), &m_rtv_heap));
     THROW_IF_FALSE(m_context.init_imgui());
-    create_uav_rt();
+    create_render_targets();
 }
 
-void glRemix::glRemixRenderer::create_uav_rt()
+void glRemix::glRemixRenderer::create_render_targets()
 {
     XMUINT2 win_dims{};
     THROW_IF_FALSE(m_context.get_window_dimensions(&win_dims));
 
-    const dx::TextureDesc uav_rt_desc{
+    const dx::TextureDesc color_desc{
         .width = win_dims.x,
         .height = win_dims.y,
         .depth_or_array_size = 1,
@@ -1445,12 +1477,65 @@ void glRemix::glRemixRenderer::create_uav_rt()
         .is_render_target = false,
     };
 
-    THROW_IF_FALSE(m_context.create_texture(uav_rt_desc, D3D12_BARRIER_LAYOUT_UNORDERED_ACCESS,
-                                            &m_uav_rt, nullptr, "UAV and RT texture"));
+    THROW_IF_FALSE(m_context.create_texture(color_desc, D3D12_BARRIER_LAYOUT_UNORDERED_ACCESS,
+                                            &m_color_rt.texture, nullptr, "color UAV texture"));
 
-    THROW_IF_FALSE(m_CPU_descriptor_heap.allocate(&m_uav_rt_descriptor));
-    m_context.create_unordered_access_view_texture(m_uav_rt, m_uav_rt.desc.format,
-                                                   m_uav_rt_descriptor);
+    THROW_IF_FALSE(m_CPU_descriptor_heap.allocate(&m_color_rt.descriptor));
+    m_context.create_unordered_access_view_texture(m_color_rt.texture, color_desc.format,
+                                                   m_color_rt.descriptor);
+
+    const dx::TextureDesc normal_desc{
+        .width = win_dims.x,
+        .height = win_dims.y,
+        .depth_or_array_size = 1,
+        .mip_levels = 1,
+        .format = DXGI_FORMAT_R16G16B16A16_FLOAT,
+        .dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+        .is_render_target = false,
+    };
+
+    THROW_IF_FALSE(m_context.create_texture(normal_desc, D3D12_BARRIER_LAYOUT_UNORDERED_ACCESS,
+                                            &m_normal_roughness_rt.texture, nullptr,
+                                            "normal roughness UAV texture"));
+
+    THROW_IF_FALSE(m_CPU_descriptor_heap.allocate(&m_normal_roughness_rt.descriptor));
+    m_context.create_unordered_access_view_texture(m_normal_roughness_rt.texture,
+                                                   normal_desc.format,
+                                                   m_normal_roughness_rt.descriptor);
+    const dx::TextureDesc motion_desc{
+        .width = win_dims.x,
+        .height = win_dims.y,
+        .depth_or_array_size = 1,
+        .mip_levels = 1,
+        .format = DXGI_FORMAT_R16G16_FLOAT,
+        .dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+        .is_render_target = false,
+    };
+
+    THROW_IF_FALSE(m_context.create_texture(motion_desc, D3D12_BARRIER_LAYOUT_UNORDERED_ACCESS,
+                                            &m_motion_rt.texture, nullptr,
+                                            "motion vectors UAV texture"));
+
+    THROW_IF_FALSE(m_CPU_descriptor_heap.allocate(&m_motion_rt.descriptor));
+    m_context.create_unordered_access_view_texture(m_motion_rt.texture, motion_desc.format,
+                                                   m_motion_rt.descriptor);
+
+    const dx::TextureDesc z_desc{
+        .width = win_dims.x,
+        .height = win_dims.y,
+        .depth_or_array_size = 1,
+        .mip_levels = 1,
+        .format = DXGI_FORMAT_R32_FLOAT,
+        .dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+        .is_render_target = false,
+    };
+
+    THROW_IF_FALSE(m_context.create_texture(z_desc, D3D12_BARRIER_LAYOUT_UNORDERED_ACCESS,
+                                            &m_z_view_rt.texture, nullptr, "z view UAV texture"));
+
+    THROW_IF_FALSE(m_CPU_descriptor_heap.allocate(&m_z_view_rt.descriptor));
+    m_context.create_unordered_access_view_texture(m_z_view_rt.texture, z_desc.format,
+                                                   m_z_view_rt.descriptor);
 }
 
 glRemix::glRemixRenderer::~glRemixRenderer() {}

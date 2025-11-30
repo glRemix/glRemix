@@ -65,7 +65,7 @@ static void hash_and_commit_geometry(glState& state, const size_t* client_indice
     }
 
     // check if hash exists
-    uint64_t hash = seed;
+    UINT64 hash = seed;
 
     MeshRecord* mesh;
     if (state.m_mesh_map.contains(hash))

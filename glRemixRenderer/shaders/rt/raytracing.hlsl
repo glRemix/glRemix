@@ -5,7 +5,11 @@
 
 RaytracingAccelerationStructure scene : register(t0);
 
-RWTexture2D<float4> render_target : register(u0);
+RWTexture2D<float4> color_output : register(u0);
+RWTexture2D<float4> normal_roughness : register(u1);
+RWTexture2D<float2> motion_vectors : register(u2);
+RWTexture2D<float> z_view : register(u3);
+
 ConstantBuffer<RayGenConstantBuffer> g_raygen_cb : register(b0);
 
 struct LightCB
@@ -25,7 +29,7 @@ typedef BuiltInTriangleIntersectionAttributes TriAttributes;
 float rand(inout uint seed)
 {
     seed = 1664525u * seed + 1013904223u;
-    return float(seed & 0x00FFFFFFu) / 16777216.0f;
+    return float(seed & 0x00FFFFFFu) / 16777216.0;
 }
 
 float3 cosine_sample_hemisphere(float2 xi)
@@ -40,7 +44,7 @@ float3 cosine_sample_hemisphere(float2 xi)
 
 float3 transform_to_world(float3 local_dir, float3 N)
 {
-    float3 up = abs(N.z) < 0.999f ? float3(0, 0, 1) : float3(1, 0, 0);
+    float3 up = abs(N.z) < 0.999 ? float3(0, 0, 1) : float3(1, 0, 0);
     float3 tangent = normalize(cross(up, N));
     float3 bitangent = cross(N, tangent);
     return normalize(local_dir.x * tangent + local_dir.y * bitangent + local_dir.z * N);
@@ -48,17 +52,25 @@ float3 transform_to_world(float3 local_dir, float3 N)
 
 [shader("raygeneration")]void RayGenMain()
 {
-    float2 uv = (float2) DispatchRaysIndex() / float2(g_raygen_cb.width, g_raygen_cb.height);
+    float2 uv = (float2) DispatchRaysIndex() / float2(g_raygen_cb.dimensions);
     uint seed = uint(DispatchRaysIndex().x * 1973 + DispatchRaysIndex().y * 9277 + 891);
     
     uint max_bounces = 3;
     int num_samples_per_pixel = 5;
     float3 final_color = float3(0, 0, 0);
     
+    float3 primary_normal = float3(0, 0, 0);
+    float primary_roughness = 0.0f;
+    float primary_z = 0.0f;
+    float3 primary_hit_pos = float3(0, 0, 0);
+    float3 primary_obj_pos = float3(0, 0, 0);  // Object-space position for motion vectors
+    uint primary_instance_id = 0;
+    bool primary_hit = false;
+    
     for (int sample = 0; sample < num_samples_per_pixel; ++sample)
     {
         // jitter for anti-aliasing
-        float2 jitter = float2(rand(seed), rand(seed)) / float2(g_raygen_cb.width, g_raygen_cb.height);
+        float2 jitter = float2(rand(seed), rand(seed)) / float2(g_raygen_cb.dimensions);
         float2 jittered_uv = uv + jitter;
 
         float2 ndc = uv * 2.0f - 1.0f;
@@ -66,12 +78,12 @@ float3 transform_to_world(float3 local_dir, float3 N)
 
         // Transform from NDC to world space using inverse view-projection
         // Near plane point in clip space
-        float4 near_point = float4(ndc, 0.0f, 1.0f);
-        float4 far_point = float4(ndc, 1.0f, 1.0f); // look down -Z match gl convention
+        float4 near_point = float4(ndc, 0.0, 1.0);
+        float4 far_point = float4(ndc, 1.0, 1.0); // look down -Z match gl convention
 
         // Transform to world space
-        float4 near_world = mul(near_point, g_raygen_cb.inv_view_proj);
-        float4 far_world = mul(far_point, g_raygen_cb.inv_view_proj);
+        float4 near_world = mul(near_point, g_raygen_cb.current.inv_view_proj);
+        float4 far_world = mul(far_point, g_raygen_cb.current.inv_view_proj);
 
         near_world /= near_world.w;
         far_world /= far_world.w;
@@ -88,7 +100,10 @@ float3 transform_to_world(float3 local_dir, float3 N)
         {
             payload.color = float4(0, 0, 0, 0);
             payload.normal = float3(0, 0, 0);
+            payload.roughness = 1.0; // TODO: Use actual roughness
             payload.hit = false;
+            payload.obj_pos = float3(0, 0, 0);
+            payload.instance_id = 0;
 
             RayDesc ray;
             ray.Origin = origin;
@@ -96,8 +111,22 @@ float3 transform_to_world(float3 local_dir, float3 N)
             ray.TMin = 0.001;
             ray.TMax = 10000.0;
 
-        // Note winding order if you don't see anything
-        TraceRay(scene, RAY_FLAG_NONE, ~0, 0, 1, 0, ray, payload);
+            // Note winding order if you don't see anything
+            TraceRay(scene, RAY_FLAG_NONE, ~0, 0, 1, 0, ray, payload);
+
+            if (sample == 0 && bounce == 0)
+            {
+                primary_hit = payload.hit;
+                if (payload.hit)
+                {
+                    primary_normal = payload.normal;
+                    primary_roughness = payload.roughness;
+                    primary_hit_pos = payload.hit_pos;
+                    primary_obj_pos = payload.obj_pos;
+                    primary_instance_id = payload.instance_id;
+                    primary_z = length(payload.hit_pos - origin);
+                }
+            }
 
             if (!payload.hit)
             {
@@ -114,7 +143,7 @@ float3 transform_to_world(float3 local_dir, float3 N)
             float3 new_dir = transform_to_world(local_dir, N);
 
             ray_dir = new_dir;
-            origin = payload.hit_pos + ray_dir * 0.001f;
+            origin = payload.hit_pos + ray_dir * 0.001;
         }
 
         final_color += sample_color;
@@ -122,9 +151,40 @@ float3 transform_to_world(float3 local_dir, float3 N)
     
     final_color /= num_samples_per_pixel; // average samples
     
-    render_target[DispatchRaysIndex().xy] = float4(final_color, 1.0);
-    // RenderTarget[DispatchRaysIndex().xy] = float4(uv, 0.0, 1.0);
-    // RenderTarget[DispatchRaysIndex().xy] = float4(ray_dir * 0.5 + 0.5, 1.0);
+    color_output[DispatchRaysIndex().xy] = float4(final_color, 1.0);
+
+    normal_roughness[DispatchRaysIndex().xy] = float4(primary_normal, primary_roughness);
+    
+    float2 motion = float2(0, 0);
+    float3 prev_world_pos = float3(0, 0, 0);
+    
+    if (primary_hit)
+    {
+        GPUMeshRecord hit_mesh = meshes[primary_instance_id];
+        
+        float3 curr_world_pos = mul(hit_mesh.curr_obj_to_world, float4(primary_obj_pos, 1.0));
+        prev_world_pos = mul(hit_mesh.prev_obj_to_world, float4(primary_obj_pos, 1.0));
+        
+        // Project current and previous world positions to clip space
+        float4 curr_clip = mul(float4(curr_world_pos, 1.0), g_raygen_cb.current.view_proj);
+        float4 prev_clip = mul(float4(prev_world_pos, 1.0), g_raygen_cb.previous.view_proj);
+
+        float2 curr_ndc = curr_clip.xy / curr_clip.w;
+        float2 prev_ndc = prev_clip.xy / prev_clip.w;
+
+        // Flip Y
+        curr_ndc.y = -curr_ndc.y;
+        prev_ndc.y = -prev_ndc.y;
+
+        float2 curr_pixel = (curr_ndc * 0.5 + 0.5) * float2(g_raygen_cb.dimensions);
+        float2 prev_pixel = (prev_ndc * 0.5 + 0.5) * float2(g_raygen_cb.dimensions);
+        
+        // Motion vector in pixel space
+        motion = curr_pixel - prev_pixel;
+    }
+    motion_vectors[DispatchRaysIndex().xy] = motion;
+
+    z_view[DispatchRaysIndex().xy] = primary_z;
 }
 
 [shader("closesthit")]void ClosestHitMain(inout RayPayload payload, in TriAttributes attr)
@@ -146,11 +206,6 @@ float3 transform_to_world(float3 local_dir, float3 N)
     const Vertex v0 = vb[i0];
     const Vertex v1 = vb[i1];
     const Vertex v2 = vb[i2];
-
-    //// DEBUG
-    // payload.color = float4(v0.position, 1.0); payload.hit = true; return;
-    // payload.color = float4(v0.color, 1.0); payload.hit = true; return;
-    // payload.color = float4(v0.normal * 0.5 + 0.5, 1.0); payload.hit = true; return;
 
     float3 bary;
     bary.yz = attr.barycentrics;
@@ -226,13 +281,19 @@ float3 transform_to_world(float3 local_dir, float3 N)
 
     payload.hit_pos = hit_pos;
     payload.normal = n_world;
+    payload.roughness = 0.0; // TODO: Use actual roughness
     payload.hit = true;
     payload.color = float4(final_color, 1.0);
+
+    // Interpolate object-space position directly from vertices
+    payload.obj_pos = v0.position * bary.x + v1.position * bary.y + v2.position * bary.z;
+    payload.instance_id = InstanceID();
 }
 
 
 [shader("miss")]void MissMain(inout RayPayload payload)
 {
     payload.color = float4(0.0, 0.0, 0.0, 1.0);
+    payload.roughness = 1.0f;
     payload.hit = false;
 }

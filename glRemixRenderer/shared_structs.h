@@ -4,12 +4,18 @@
 
 #include "hlsl_compat.h"
 
-struct RayGenConstantBuffer
+struct ViewProjMatrices
 {
     XMFLOAT4X4 view_proj;
     XMFLOAT4X4 inv_view_proj;
-    float width;
-    float height;
+};
+
+struct RayGenConstantBuffer
+{
+    ViewProjMatrices current;
+    ViewProjMatrices previous;
+
+    XMUINT2 dimensions;
 };
 
 struct Vertex
@@ -80,12 +86,19 @@ struct GPUMeshRecord
     UINT32 mat_buffer_idx;
     UINT32 mat_idx;
     UINT32 tex_idx;
+
+    // For motion vector generation
+    XMFLOAT3X4 curr_obj_to_world;
+    XMFLOAT3X4 prev_obj_to_world;
 };
 
 struct RayPayload
 {
     XMFLOAT4 color;
     XMFLOAT3 normal;
+    float roughness;
     BOOL hit;
     XMFLOAT3 hit_pos;
+    XMFLOAT3 obj_pos;    // Object space hit position for motion vectors
+    UINT32 instance_id;  // Instance ID for looking up previous transform
 };
