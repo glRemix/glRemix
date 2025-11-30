@@ -1012,9 +1012,17 @@ void glRemix::glRemixRenderer::render()
     m_texture_upload_buffers[get_frame_index()].clear();
     sm_driver.process_stream();
 
-    if (state.m_create_context)
+    XMUINT2 dims;
+    if (state.m_create_context && dx::D3D12Context::s_get_window_dimensions(&dims, state.hwnd)
+        && dims.x > 0 && dims.y > 0)
     {
         create_swapchain_and_rts(state.hwnd);
+        state.m_swapchain_creation_deferred = false;
+    }
+    else
+    {
+        state.m_swapchain_creation_deferred = true;
+        return;  // skip rendering frame
     }
 
     // TODO: In general resource creation should be moved to its own dedicated thread
@@ -1071,7 +1079,7 @@ void glRemix::glRemixRenderer::render()
     const auto swapchain_idx = m_context.get_swapchain_index();
 
     XMUINT2 win_dims{};
-    m_context.get_window_dimensions(&win_dims);
+    m_context.s_get_window_dimensions(&win_dims, m_context.get_window());
 
     // Set viewport, scissor
     const D3D12_VIEWPORT viewport{
@@ -1433,7 +1441,7 @@ void glRemix::glRemixRenderer::create_swapchain_and_rts(HWND hwnd)
 void glRemix::glRemixRenderer::create_uav_rt()
 {
     XMUINT2 win_dims{};
-    THROW_IF_FALSE(m_context.get_window_dimensions(&win_dims));
+    THROW_IF_FALSE(m_context.s_get_window_dimensions(&win_dims, m_context.get_window()));
 
     const dx::TextureDesc uav_rt_desc{
         .width = win_dims.x,

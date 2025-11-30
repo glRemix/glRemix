@@ -1082,13 +1082,16 @@ void glRemix::glDriver::process_stream()
 
     m_state.m_current_frame = frame_index;
 
-    // reset per frames
-    m_state.m_create_context = false;
-    m_state.m_meshes.clear();              // per frame meshes
-    m_state.m_matrix_pool.clear();         // reset matrix pool each frame
-    m_state.m_materials.clear();
-    m_state.m_pending_geometries.clear();  // clear pending geometry data
-    m_state.m_pending_textures.clear();
+    if (!m_state.m_swapchain_creation_deferred)
+    {
+        // reset per frames
+        m_state.m_create_context = false;
+        m_state.m_meshes.clear();              // per frame meshes
+        m_state.m_matrix_pool.clear();         // reset matrix pool each frame
+        m_state.m_materials.clear();
+        m_state.m_pending_geometries.clear();  // clear pending geometry data
+        m_state.m_pending_textures.clear();
+    }
 
     m_state.m_offset = 0;
     GLCommandContext ctx{ m_state, *this };
