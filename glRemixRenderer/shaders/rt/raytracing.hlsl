@@ -79,7 +79,144 @@ float3 direct_lighting(float3 hit_pos, float3 N, float3 albedo)
     return direct;
 }
 
-float compute_lod(float3 N, float3 viewDir, float dist)
+static const float EPSILON = 1e-8f;
+
+bool solve_linear_system(float2x2 A, float2 B, out float x0, out float x1)
+{
+    float det = A[0][0] * A[1][1] - A[0][1] * A[1][0];
+    if (abs(det) < EPSILON)
+    {
+        x0 = 0.0f;
+        x1 = 0.0f;
+        return false;
+    }
+
+    float invDet = 1.0f / det;
+    x0 = (A[1][1] * B.x - A[0][1] * B.y) * invDet;
+    x1 = (A[0][0] * B.y - A[1][0] * B.x) * invDet;
+
+    if (isnan(x0) || isnan(x1))
+        return false;
+
+    return true;
+}
+
+void calculate_triangle_surface_differential(
+    float3 p0, float3 p1, float3 p2,
+    float2 uv0, float2 uv1, float2 uv2,
+    out float3 dpdu, out float3 dpdv)
+{
+    float2 duv02 = uv0 - uv2;
+    float2 duv12 = uv1 - uv2;
+    float determinant = duv02.x * duv12.y - duv02.y * duv12.x;
+
+    float3 dp02 = p0 - p2;
+    float3 dp12 = p1 - p2;
+
+    if (abs(determinant) < 1e-8f)
+    {
+        float3 ng = normalize(cross(p2 - p0, p1 - p0));
+
+        if (abs(ng.x) > abs(ng.y))
+        {
+            dpdu = float3(-ng.z, 0.0f, ng.x);
+            dpdu /= sqrt(ng.x * ng.x + ng.z * ng.z + 1e-8f);
+        }
+        else
+        {
+            dpdu = float3(0.0f, ng.z, -ng.y);
+            dpdu /= sqrt(ng.y * ng.y + ng.z * ng.z + 1e-8f);
+        }
+
+        dpdv = cross(ng, dpdu);
+    }
+    else
+    {
+        float invdet = 1.0f / determinant;
+        dpdu = (duv12.y * dp02 - duv02.y * dp12) * invdet;
+        dpdv = (-duv12.x * dp02 + duv02.x * dp12) * invdet;
+    }
+}
+
+float4 calculate_screen_space_differential(
+    float3 p,
+    float3 n,
+    float3 origin,
+    float3 rDirection,
+    float3 xorigin,
+    float3 rxDirection,
+    float3 yorigin,
+    float3 ryDirection,
+    float3 dpdu,
+    float3 dpdv
+)
+{
+    float d = dot(n, p);
+
+
+    float denomX = dot(n, rxDirection);
+    float tx = -(dot(n, xorigin) - d) / denomX;
+    float3 px = xorigin + tx * rxDirection;
+
+    float denomY = dot(n, ryDirection);
+    float ty = -(dot(n, yorigin) - d) / denomY;
+    float3 py = yorigin + ty * ryDirection;
+
+    float3 dpdx = px - p;
+    float3 dpdy = py - p;
+
+    int2 dim;
+    float ax = abs(n.x);
+    float ay = abs(n.y);
+    float az = abs(n.z);
+
+    if (ax > ay && ax > az)
+        dim = int2(1, 2);
+    else if (ay > az)
+        dim = int2(0, 2);
+    else
+        dim = int2(0, 1);
+
+    float2x2 A;
+    A[0][0] = dpdu[dim.x];
+    A[0][1] = dpdv[dim.x];
+    A[1][0] = dpdu[dim.y];
+    A[1][1] = dpdv[dim.y];
+
+    float2 Bx = float2(px[dim.x] - p[dim.x], px[dim.y] - p[dim.y]);
+    float2 By = float2(py[dim.x] - p[dim.x], py[dim.y] - p[dim.y]);
+
+    float dudx, dvdx, dudy, dvdy;
+
+    if (!solve_linear_system(A, Bx, dudx, dvdx))
+    {
+        dudx = 0.0f;
+        dvdx = 0.0f;
+    }
+
+    if (!solve_linear_system(A, By, dudy, dvdy))
+    {
+        dudy = 0.0f;
+        dvdy = 0.0f;
+    }
+
+    return float4(dudx, dvdx, dudy, dvdy);
+}
+
+float lod_from_surface_differential(float dudx, float dvdx, float dudy, float dvdy, int maxMip)
+{
+    float sx = length(float2(dudx, dvdx));
+    float sy = length(float2(dudy, dvdy));
+    float footprint = max(sx, sy);
+    footprint = max(footprint, 1e-8f);
+
+    float lod = log2(footprint);
+
+    lod = clamp(lod, 0.0f, (float) (maxMip - 1u));
+    return lod;
+}
+
+float lod_heuristic(float3 N, float3 viewDir, float dist)
 {
     const float mipStartDist = 8.0f;
     const float mipScale = 0.02f; // how fast LOD grows with distance
@@ -100,9 +237,27 @@ float compute_lod(float3 N, float3 viewDir, float dist)
     return lod;
 }
 
+void generate_camera_ray(float2 uv, out float3 origin, out float3 dir)
+{
+    float2 ndc = uv * 2.0f - 1.0f;
+    ndc.y = -ndc.y;
+
+    float4 near_point = float4(ndc, 0.0f, 1.0f);
+    float4 far_point = float4(ndc, 1.0f, 1.0f);
+
+    float4 near_world = mul(near_point, g_raygen_cb.inv_view_proj);
+    float4 far_world = mul(far_point, g_raygen_cb.inv_view_proj);
+
+    near_world /= near_world.w;
+    far_world /= far_world.w;
+
+    origin = near_world.xyz;
+    dir = normalize(far_world.xyz - near_world.xyz);
+}
+
 [shader("raygeneration")]void RayGenMain()
 {
-    float2 uv = (float2) DispatchRaysIndex() / float2(g_raygen_cb.width, g_raygen_cb.height);
+    float2 base_uv = (float2) DispatchRaysIndex() / float2(g_raygen_cb.width, g_raygen_cb.height);
     uint seed = uint(DispatchRaysIndex().x * 1973 + DispatchRaysIndex().y * 9277 + 891);
     
     uint max_bounces = 3;
@@ -113,25 +268,17 @@ float compute_lod(float3 N, float3 viewDir, float dist)
     {
         // jitter for anti-aliasing
         float2 jitter = float2(rand(seed), rand(seed)) / float2(g_raygen_cb.width, g_raygen_cb.height);
-        float2 jittered_uv = uv + jitter;
+        float2 jittered_uv = base_uv + jitter;
 
-        float2 ndc = uv * 2.0f - 1.0f;
-        ndc.y = -ndc.y; // Flip Y for correct screen space orientation
-
-        // Transform from NDC to world space using inverse view-projection
-        // Near plane point in clip space
-        float4 near_point = float4(ndc, 0.0f, 1.0f);
-        float4 far_point = float4(ndc, 1.0f, 1.0f); // look down -Z match gl convention
-
-        // Transform to world space
-        float4 near_world = mul(near_point, g_raygen_cb.inv_view_proj);
-        float4 far_world = mul(far_point, g_raygen_cb.inv_view_proj);
-
-        near_world /= near_world.w;
-        far_world /= far_world.w;
-
-        float3 origin = near_world.xyz;
-        float3 ray_dir = normalize(far_world.xyz - near_world.xyz);
+        float3 origin, ray_dir;
+        generate_camera_ray(jittered_uv, origin, ray_dir);
+        
+        float2 pixelSize = float2(1.0f / g_raygen_cb.width, 1.0f / g_raygen_cb.height);
+        
+        float3 rxOrigin, rxDir;
+        float3 ryOrigin, ryDir;
+        generate_camera_ray(jittered_uv + float2(pixelSize.x, 0.0f), rxOrigin, rxDir);
+        generate_camera_ray(jittered_uv + float2(0.0f, pixelSize.y), ryOrigin, ryDir);
 
         float3 sample_color = float3(0, 0, 0);
         float3 throughput = 1.0;
@@ -141,6 +288,15 @@ float compute_lod(float3 N, float3 viewDir, float dist)
             RayPayload payload;
             payload.hit = false;
 
+            payload.rayOrigin = origin;
+            payload.rayDir = ray_dir;
+            payload.rxOrigin = rxOrigin;
+            payload.rxDir = rxDir;
+            payload.ryOrigin = ryOrigin;
+            payload.ryDir = ryDir;
+            
+            payload.depth = bounce;
+            
             RayDesc ray;
             ray.Origin = origin;
             ray.Direction = ray_dir;
@@ -249,15 +405,66 @@ float compute_lod(float3 N, float3 viewDir, float dist)
     if (mesh.tex_idx != 0xFFFFFFFFu)
     {
         Texture2D tex = ResourceDescriptorHeap[NonUniformResourceIndex(mesh.tex_idx)];
-        
-        float3 V = -normalize(WorldRayDirection());
-        float3 N = normalize(n_world);
-        float dist = RayTCurrent();
-        
-        float lod = compute_lod(N, V, dist);
 
-        float4 tex_sample = tex.SampleLevel(g_sampler, uv, lod);
-        tex_albedo = tex_sample.rgb;
+        uint texWidth, texHeight, texMips;
+        tex.GetDimensions(0, texWidth, texHeight, texMips);
+
+        float3 p = hit_pos;
+        float3 N = normalize(n_world);
+
+        if (payload.depth == 0)
+        {
+            float3 origin = payload.rayOrigin;
+            float3 rDirection = payload.rayDir;
+
+            float3 xorigin = payload.rxOrigin;
+            float3 rxDirection = payload.rxDir;
+
+            float3 yorigin = payload.ryOrigin;
+            float3 ryDirection = payload.ryDir;
+
+            float3 p0 = v0.position;
+            float3 p1 = v1.position;
+            float3 p2 = v2.position;
+
+            float2 uv0 = v0.uv;
+            float2 uv1 = v1.uv;
+            float2 uv2 = v2.uv;
+
+            float3 dpdu_obj, dpdv_obj;
+            calculate_triangle_surface_differential(p0, p1, p2, uv0, uv1, uv2, dpdu_obj, dpdv_obj);
+
+            float3 dpdu = mul(dpdu_obj, o2w3x3);
+            float3 dpdv = mul(dpdv_obj, o2w3x3);
+
+            float4 dUV = calculate_screen_space_differential(
+                p, N,
+                origin, rDirection,
+                xorigin, rxDirection,
+                yorigin, ryDirection,
+                dpdu, dpdv);
+
+            float dudx = dUV.x;
+            float dvdx = dUV.y;
+            float dudy = dUV.z;
+            float dvdy = dUV.w;
+
+            float lod = lod_from_surface_differential(dudx, dvdx, dudy, dvdy, texMips);
+
+            float4 tex_sample = tex.SampleLevel(g_sampler, uv, lod);
+            tex_albedo = tex_sample.rgb;
+        }
+        else
+        {
+            float3 V = -normalize(WorldRayDirection());
+            float dist = RayTCurrent();
+            float lod = lod_heuristic(N, V, dist);
+
+            lod = clamp(lod, 0.0f, (float) (texMips - 1u));
+
+            float4 tex_sample = tex.SampleLevel(g_sampler, uv, lod);
+            tex_albedo = tex_sample.rgb;
+        }
     }
     
     bool has_vertex = dot(vertex_color, vertex_color) > 1e-4;

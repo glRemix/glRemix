@@ -7,6 +7,21 @@ LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARA
 
 namespace glRemix
 {
+inline Material MakeDebugMaterial()
+{
+    Material m{};
+
+    // Something extremely obvious (bright magenta)
+    m.ambient = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
+    m.diffuse = XMFLOAT4(1.0f, 0.0f, 1.0f, 1.0f);  // MAGENTA
+    m.specular = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
+    m.emission = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
+
+    m.shininess = 0.0f;
+
+    return m;
+}
+
 static void hash_and_commit_geometry(glState& state, const size_t* client_indices = nullptr)
 {
     if (!state.m_perspective || state.t_indices.empty())
