@@ -10,8 +10,9 @@
 namespace glRemix
 {
 bool load_mesh_from_path(std::filesystem::path asset_path, std::vector<Vertex>& out_vertices,
-                         std::vector<UINT32>& out_indices, std::vector<Material>& out_materials,
+                         std::vector<UINT32>& out_indices, PendingTexture& out_texture,
                          XMFLOAT3& out_min_bb, XMFLOAT3& out_max_bb);
+
 }
 
 // namespace glRemix

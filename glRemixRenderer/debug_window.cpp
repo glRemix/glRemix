@@ -63,7 +63,12 @@ void DebugWindow::render_mesh_ids()
     {
         for (int i = 0; i < m_meshes->size(); i++)
         {
-            uint64_t meshID = (*m_meshes)[i].mesh_id;
+            MeshRecord& curr_mesh = (*m_meshes)[i];
+            uint64_t meshID = curr_mesh.mesh_id;
+
+            ImGui::PushID(i);
+
+            ImGui::BeginGroup();
 
             const bool is_selected = (m_meshID_to_replace == meshID);
             char buf[64];
@@ -72,6 +77,19 @@ void DebugWindow::render_mesh_ids()
             {
                 m_meshID_to_replace = meshID;
             }
+
+            ImGui::SameLine();
+
+            bool visible = curr_mesh.visible;
+            if (ImGui::Checkbox("##visible", &visible))
+            {
+                // toggle visibility
+                curr_mesh.visible = visible;
+            }
+
+            ImGui::EndGroup();
+
+            ImGui::PopID();
         }
         ImGui::EndListBox();
     }
