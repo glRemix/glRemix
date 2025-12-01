@@ -15,6 +15,7 @@
 #include "gl/gl_matrix_stack.h"
 
 #include "structs.h"
+#include "mesh_loader.h"
 #include <shared/containers/free_list_vector.h>
 
 #include <filesystem>
@@ -83,6 +84,8 @@ class glRemixRenderer : public Application
     std::array<BufferAndDescriptor, m_frames_in_flight> m_light_buffer;
 
     DebugWindow m_debug_window;
+
+    MeshLoader m_mesh_loader;
 
     void create_material_buffer();
     void create_mesh_record_buffer();
