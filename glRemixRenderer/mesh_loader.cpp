@@ -8,8 +8,10 @@
 
 #include <filesystem>
 #include <vector>
+#include <cstring>
+#include <memory>
 
-bool glRemix::load_mesh_from_path(std::filesystem::path asset_path,
+bool glRemix::MeshLoader::load_mesh_from_path(std::filesystem::path asset_path,
                                   std::vector<Vertex>& out_vertices,
                                   std::vector<UINT32>& out_indices, PendingTexture& out_texture,
                                   XMFLOAT3& out_min_bb, XMFLOAT3& out_max_bb)
@@ -37,7 +39,7 @@ bool glRemix::load_mesh_from_path(std::filesystem::path asset_path,
 
         // load image using DirectXTex
         ScratchImage scratch_image;
-        TexMetadata metadata;
+        TexMetadata metadata{};
 
         if (auto* uri = std::get_if<fastgltf::sources::URI>(&img.data))
         {
@@ -73,15 +75,23 @@ bool glRemix::load_mesh_from_path(std::filesystem::path asset_path,
         }
         
         const Image* img_data = scratch_image.GetImage(0, 0, 0);
+        const size_t byte_size = img_data->slicePitch;
+        auto pixel_buffer = std::make_unique<uint8_t[]>(byte_size);
+        memcpy(pixel_buffer.get(), img_data->pixels, byte_size);
 
-        // PendingTexture tex;
-        out_texture.index = i;
-        out_texture.desc.width = img_data->width;
-        out_texture.desc.height = img_data->height;
-        out_texture.desc.mip_levels = 1;
-        out_texture.desc.format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        out_texture.desc.dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-        out_texture.pixels = img_data->pixels;
+        out_texture.index = static_cast<UINT32>(i);
+        out_texture.desc = {
+            static_cast<UINT32>(img_data->width),
+            static_cast<UINT32>(img_data->height),
+            1,
+            1,
+            DXGI_FORMAT_R8G8B8A8_UNORM,
+            D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+            false
+        };
+        out_texture.pixels = pixel_buffer.get();
+
+        m_owned_texture_buffers.emplace_back(std::move(pixel_buffer));
     }
 
     // get first mesh only for now

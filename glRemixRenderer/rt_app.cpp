@@ -805,8 +805,8 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
     // load new asset from given file path
     std::vector<Vertex> new_vertices;
     std::vector<UINT32> new_indices;
-    PendingTexture new_texture;
-    THROW_IF_FALSE(glRemix::load_mesh_from_path(new_asset_path_fs, new_vertices, new_indices,
+    PendingTexture new_texture{};
+    THROW_IF_FALSE(m_mesh_loader.load_mesh_from_path(new_asset_path_fs, new_vertices, new_indices,
                                                 new_texture, min_bb, max_bb));
 
     // set actual index of texture and push to pending textures
@@ -841,6 +841,7 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
     pending.indices = std::move(new_indices);
     pending.hash = new_mesh_hash;
     pending.mat_idx = static_cast<UINT32>(state.m_materials.size());
+    //pending.mat_idx = -1;
     pending.mv_idx = static_cast<UINT32>(state.m_matrix_pool.size());
     pending.replace_idx = removed_index;
 
@@ -849,6 +850,7 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
 
     // added other mesh properties
     new_mesh.mat_idx = old_mesh_mat_idx;
+    //new_mesh.mat_idx = -1;
     new_mesh.mv_idx = old_mesh_mv_idx;
     new_mesh.tex_idx = new_texture.index;
     new_mesh.min_bb = min_bb;
@@ -992,7 +994,7 @@ void glRemix::glRemixRenderer::render()
         = m_mesh_resources
               .size();  // required for setting mesh record pointers properly within driver
     state.m_num_textures = m_textures.size();
-    m_texture_upload_buffers.clear();
+    //m_texture_upload_buffers.clear(); erroring here?
     m_driver.process_stream();
 
     if (state.m_create_context)
