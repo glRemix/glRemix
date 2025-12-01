@@ -71,7 +71,6 @@ struct Material
     XMFLOAT4 emission;
 
     float shininess;
-    float _pad[3];
 };
 
 struct GPUMeshRecord
@@ -89,4 +88,13 @@ struct RayPayload
     XMFLOAT3 normal;
     BOOL hit;
     XMFLOAT3 hit_pos;
+
+    XMFLOAT3 rayOrigin;
+    XMFLOAT3 rayDir;
+    XMFLOAT3 rxOrigin;
+    XMFLOAT3 rxDir;
+    XMFLOAT3 ryOrigin;
+    XMFLOAT3 ryDir;
+
+    UINT32 depth;
 };

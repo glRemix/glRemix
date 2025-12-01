@@ -1380,8 +1380,8 @@ void glRemix::glRemixRenderer::render()
 
     // replace meshes in m_meshes if applicable
     handle_per_frame_replacement();
-    // Currently reserve TLAS, 1 UAV RT, 2 CBV
-    constexpr auto reserved_descriptor_offset = 4;
+    // Currently reserve TLAS, 1 UAV RT, 1 ENV SRV, 2 CBV
+    constexpr auto reserved_descriptor_offset = 5;
     // Update mesh records vector with global indices based off current paging status
     // This is done in place on the per frame vector of MeshRecords
     static std::vector<GPUMeshRecord> gpu_mesh_records_to_copy;
@@ -1458,7 +1458,9 @@ void glRemix::glRemixRenderer::render()
     // build environment map
     if (m_environment.descriptor.offset == dx::CREATE_NEW_DESCRIPTOR)
     {
-        create_environment_map(cmd_list.Get(), nullptr);  // path to your texture
+        create_environment_map(
+            cmd_list.Get(),
+            "C:\\Users\\bryce\\OneDrive\\Desktop\\skyfire_skybox.dds");  // path to your texture
     }
 
     // Dispatch rays to UAV render target
