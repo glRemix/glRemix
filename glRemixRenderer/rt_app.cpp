@@ -1458,7 +1458,7 @@ void glRemix::glRemixRenderer::render()
     // build environment map
     if (m_environment.descriptor.offset == dx::CREATE_NEW_DESCRIPTOR)
     {
-        create_environment_map(cmd_list.Get(), nullptr); // path to your texture
+        create_environment_map(cmd_list.Get(), nullptr);  // path to your texture
     }
 
     // Dispatch rays to UAV render target

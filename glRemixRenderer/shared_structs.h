@@ -71,6 +71,7 @@ struct Material
     XMFLOAT4 emission;
 
     float shininess;
+    float _pad[3];
 };
 
 struct GPUMeshRecord
