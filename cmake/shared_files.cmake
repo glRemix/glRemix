@@ -17,6 +17,7 @@ set(GLREMIX_SHARED_HEADER_NAMES
     "ipc_protocol.inl"
     "gl_utils.h"
 	"math_utils.h"
+    "debug_utils.h"
 	"${containers}/free_list_vector.h"
 )
 

@@ -2,6 +2,8 @@
 # To use this file, configure git with:
 #   git config blame.ignoreRevsFile .git-blame-ignore-revs
 
+1575ab6829f8bdf9876773bfbc71aadc48ca92b2  # ci: whitespace
+6030c07e1f1a127cdab9fec816d0dc9c744a1ecf  # ci: restore external/ state
 f75c2c67baac37b4bb430796a42f78ce98037c05  # ci: clang format
 a4c7bf9d229be0eb56601b868d34920cb97e3a62  # ci: reorder command handlers to match shim categories
 66f0e53f718a2176d381f0e79adc38858d7f9faf  # ci: clang format

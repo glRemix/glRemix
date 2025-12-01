@@ -4,16 +4,6 @@
 
 #include "math_utils.h"
 
-#define DBG_PRINT(fmt, ...)                                                                        \
-    do                                                                                             \
-    {                                                                                              \
-        char _buf[256];                                                                            \
-        std::snprintf(_buf, sizeof(_buf), fmt "\n", __VA_ARGS__);                                  \
-        OutputDebugStringA(_buf);                                                                  \
-    } while (0)
-
-#define FSTR(fmt, ...) std::format(fmt, __VA_ARGS__)
-
 namespace glRemix
 {
 constexpr UINT32 k_DEFAULT_CAPACITY = 16 * MEGABYTE;
