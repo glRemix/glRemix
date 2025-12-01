@@ -2,6 +2,7 @@
 #include <fastgltf/core.hpp>
 #include <fastgltf/tools.hpp>
 #include <DirectXMath.h>
+#include <DirectXTex.h>
 #include "dx/d3d12_as.h"
 #include "structs.h"
 
@@ -10,9 +11,8 @@
 
 bool glRemix::load_mesh_from_path(std::filesystem::path asset_path,
                                   std::vector<Vertex>& out_vertices,
-                                  std::vector<UINT32>& out_indices,
-                                  std::vector<Material>& out_materials, XMFLOAT3& out_min_bb,
-                                  XMFLOAT3& out_max_bb)
+                                  std::vector<UINT32>& out_indices, PendingTexture& out_texture,
+                                  XMFLOAT3& out_min_bb, XMFLOAT3& out_max_bb)
 {
     fastgltf::Parser parser;
 
@@ -29,7 +29,60 @@ bool glRemix::load_mesh_from_path(std::filesystem::path asset_path,
         return false;
     }
 
-    // fastgltf::validate(asset.get());
+    // get textures
+    const auto& img = asset->images;
+    for (size_t i = 0; i < 1; ++i)  // just get base color texture for now
+    {
+        const auto& img = asset->images[i];
+
+        // load image using DirectXTex
+        ScratchImage scratch_image;
+        TexMetadata metadata;
+
+        if (auto* uri = std::get_if<fastgltf::sources::URI>(&img.data))
+        {
+            std::filesystem::path uri_path = uri->uri.fspath();
+            std::filesystem::path path = asset_path.parent_path() / uri_path;
+
+            HRESULT hr = LoadFromWICFile(path.c_str(), WIC_FLAGS_FORCE_RGB, &metadata,
+                                         scratch_image);
+
+            if (FAILED(hr))
+            {
+                printf("Failed to load texture file: %s\n", path.string().c_str());
+                return false;
+            }
+        }
+
+        // convert to correct format
+        ScratchImage converted;
+        const DXGI_FORMAT target_format = DXGI_FORMAT_R8G8B8A8_UNORM;
+
+        if (metadata.format != target_format)
+        {
+            HRESULT hr = Convert(*scratch_image.GetImage(0, 0, 0), target_format,
+                                          TEX_FILTER_DEFAULT, TEX_THRESHOLD_DEFAULT, converted);
+
+            if (FAILED(hr))
+            {
+                printf("Failed to convert GLTF texture to RGBA8\n");
+                return false;
+            }
+
+            scratch_image = std::move(converted);
+        }
+        
+        const Image* img_data = scratch_image.GetImage(0, 0, 0);
+
+        // PendingTexture tex;
+        out_texture.index = i;
+        out_texture.desc.width = img_data->width;
+        out_texture.desc.height = img_data->height;
+        out_texture.desc.mip_levels = 1;
+        out_texture.desc.format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        out_texture.desc.dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        out_texture.pixels = img_data->pixels;
+    }
 
     // get first mesh only for now
     auto& mesh = asset->meshes[0];
@@ -89,6 +142,17 @@ bool glRemix::load_mesh_from_path(std::filesystem::path asset_path,
             fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
                 asset.get(), normal_acc, [&](fastgltf::math::fvec3 n, size_t idx)
                 { out_vertices[vertex_offset + idx].normal = { n.x(), n.y(), n.z() }; });
+        }
+
+        // get texture material if it exists
+        if (primitive.materialIndex.has_value())
+        {
+            const auto& material = asset->materials[primitive.materialIndex.value()];
+            auto& baseColorTexture = material.pbrData.baseColorTexture;
+            if (baseColorTexture.has_value())
+            {
+                auto& texture = asset->textures[baseColorTexture->textureIndex];
+            }
         }
     }
 
