@@ -1,5 +1,8 @@
 #include <cstdio>
 #include <format>
+#include <debugapi.h>
+#include <winbase.h>
+#include <winuser.h>
 
 #define DBG_PRINT(fmt, ...)                                                                        \
     do                                                                                             \
@@ -10,3 +13,7 @@
     } while (0)
 
 #define FSTR(fmt, ...) std::format(fmt, __VA_ARGS__)
+
+extern "C" WINUSERAPI int WINAPI MessageBoxTimeoutW(IN HWND hWnd, IN PCWSTR lpText,
+                                                    IN PCWSTR lpCaption, IN UINT uType,
+                                                    IN WORD wLanguageId, IN DWORD dwMilliseconds);

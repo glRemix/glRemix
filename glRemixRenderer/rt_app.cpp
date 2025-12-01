@@ -1013,16 +1013,18 @@ void glRemix::glRemixRenderer::render()
     sm_driver.process_stream();
 
     XMUINT2 dims;
-    if (state.m_create_context && dx::D3D12Context::s_get_window_dimensions(&dims, state.hwnd)
-        && dims.x > 0 && dims.y > 0)
+    if (state.m_create_context)
     {
-        create_swapchain_and_rts(state.hwnd);
-        state.m_swapchain_creation_deferred = false;
-    }
-    else
-    {
-        state.m_swapchain_creation_deferred = true;
-        return;  // skip rendering frame
+        if (dx::D3D12Context::s_get_window_dimensions(&dims, state.hwnd) && dims.x > 0 && dims.y > 0)
+        {
+            create_swapchain_and_rts(state.hwnd);
+            state.m_swapchain_creation_deferred = false;
+        }
+        else
+        {
+            state.m_swapchain_creation_deferred = true;
+            return;  // skip rendering frame
+        }
     }
 
     // TODO: In general resource creation should be moved to its own dedicated thread

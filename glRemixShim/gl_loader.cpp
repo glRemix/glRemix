@@ -203,7 +203,8 @@ bool shutdown()
 
 #if 1
     // TODO: add some other custom goodbye? or remove
-    MessageBoxA(nullptr, "Thanks for using glRemix!", "glRemixShim", MB_OK | MB_ICONINFORMATION);
+    MessageBoxTimeoutW(nullptr, L"Thanks for using glRemix!", L"glRemixShim",
+                       MB_OK | MB_ICONINFORMATION, 0, 5000);
 #endif
     return true;
 }

@@ -750,58 +750,6 @@ GLenum APIENTRY gl_get_error()
 
 /* WGL (Windows Graphics Library) overrides */
 
-BOOL WINAPI swap_buffers_ovr(HDC)
-{
-    if (!gl::launch_renderer())
-    {
-        return FALSE;
-    }
-    g_ipc.end_frame();
-    g_ipc.start_frame_or_wait();
-
-    return TRUE;
-}
-
-FakePixelFormat s_create_default_pixel_format(const PIXELFORMATDESCRIPTOR* requested)
-{
-    if (requested == nullptr)
-    {
-        // Standard 32-bit color 24-bit depth 8-bit stencil double buffered format
-        return { .descriptor = { .nSize = sizeof(PIXELFORMATDESCRIPTOR),
-                                 .nVersion = 1,
-                                 .dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL
-                                            | PFD_DOUBLEBUFFER,
-                                 .iPixelType = PFD_TYPE_RGBA,
-                                 .cColorBits = 32,
-                                 .cRedBits = 8,
-                                 .cRedShift = 16,
-                                 .cGreenBits = 8,
-                                 .cGreenShift = 8,
-                                 .cBlueBits = 8,
-                                 .cBlueShift = 0,
-                                 .cAlphaBits = 8,
-                                 .cAlphaShift = 24,
-                                 .cAccumBits = 0,
-                                 .cAccumRedBits = 0,
-                                 .cAccumGreenBits = 0,
-                                 .cAccumBlueBits = 0,
-                                 .cAccumAlphaBits = 0,
-                                 .cDepthBits = 24,
-                                 .cStencilBits = 8,
-                                 .cAuxBuffers = 0,
-                                 .iLayerType = PFD_MAIN_PLANE,
-                                 .bReserved = 0,
-                                 .dwLayerMask = 0,
-                                 .dwVisibleMask = 0,
-                                 .dwDamageMask = 0 } };
-    }
-    FakePixelFormat result;
-    result.descriptor = *requested;
-    result.descriptor.nSize = sizeof(PIXELFORMATDESCRIPTOR);
-    result.descriptor.nVersion = 1;
-    return result;
-}
-
 // Window procedure to capture input events and forward to IPC
 static LRESULT CALLBACK s_input_capture_wnd_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
@@ -854,6 +802,75 @@ static LRESULT CALLBACK s_input_capture_wnd_proc(HWND hwnd, UINT msg, WPARAM wpa
         return CallWindowProc(g_original_wndproc, hwnd, msg, wparam, lparam);
     }
     return DefWindowProc(hwnd, msg, wparam, lparam);
+}
+
+BOOL WINAPI swap_buffers_ovr(HDC dc)
+{
+    if (!gl::launch_renderer())
+    {
+        return FALSE;
+    }
+
+    // Install window procedure hook to capture input events
+    if (!g_original_wndproc)
+    {
+        // Derive HWND from HDC for swapchain creation
+        HWND hwnd = WindowFromDC(dc);
+        assert(hwnd);
+
+        g_original_wndproc = reinterpret_cast<WNDPROC>(
+            SetWindowLongPtr(hwnd, GWLP_WNDPROC,
+                             reinterpret_cast<LONG_PTR>(s_input_capture_wnd_proc)));
+
+        GLRemixSendHWNDCommand payload{ hwnd };
+
+        g_ipc.write_command(GLCommandType::GLREMIXCMD_SEND_HWND, payload);
+    }
+
+    g_ipc.end_frame();
+    g_ipc.start_frame_or_wait();
+
+    return TRUE;
+}
+
+FakePixelFormat s_create_default_pixel_format(const PIXELFORMATDESCRIPTOR* requested)
+{
+    if (requested == nullptr)
+    {
+        // Standard 32-bit color 24-bit depth 8-bit stencil double buffered format
+        return { .descriptor = { .nSize = sizeof(PIXELFORMATDESCRIPTOR),
+                                 .nVersion = 1,
+                                 .dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL
+                                            | PFD_DOUBLEBUFFER,
+                                 .iPixelType = PFD_TYPE_RGBA,
+                                 .cColorBits = 32,
+                                 .cRedBits = 8,
+                                 .cRedShift = 16,
+                                 .cGreenBits = 8,
+                                 .cGreenShift = 8,
+                                 .cBlueBits = 8,
+                                 .cBlueShift = 0,
+                                 .cAlphaBits = 8,
+                                 .cAlphaShift = 24,
+                                 .cAccumBits = 0,
+                                 .cAccumRedBits = 0,
+                                 .cAccumGreenBits = 0,
+                                 .cAccumBlueBits = 0,
+                                 .cAccumAlphaBits = 0,
+                                 .cDepthBits = 24,
+                                 .cStencilBits = 8,
+                                 .cAuxBuffers = 0,
+                                 .iLayerType = PFD_MAIN_PLANE,
+                                 .bReserved = 0,
+                                 .dwLayerMask = 0,
+                                 .dwVisibleMask = 0,
+                                 .dwDamageMask = 0 } };
+    }
+    FakePixelFormat result;
+    result.descriptor = *requested;
+    result.descriptor.nSize = sizeof(PIXELFORMATDESCRIPTOR);
+    result.descriptor.nVersion = 1;
+    return result;
 }
 
 int WINAPI choose_pixel_format_ovr(HDC dc, const PIXELFORMATDESCRIPTOR* descriptor)
@@ -938,22 +955,6 @@ HGLRC WINAPI create_context_ovr(HDC dc)
         // as we've properly error-handled in `initialize()`, this is appropriate.
         return nullptr;
     }
-
-    // Derive HWND from HDC for swapchain creation
-    HWND hwnd = WindowFromDC(dc);
-    assert(hwnd);
-
-    // Install window procedure hook to capture input events
-    if (!g_original_wndproc)
-    {
-        g_original_wndproc = reinterpret_cast<WNDPROC>(
-            SetWindowLongPtr(hwnd, GWLP_WNDPROC,
-                             reinterpret_cast<LONG_PTR>(s_input_capture_wnd_proc)));
-    }
-
-    WGLCreateContextCommand payload{ hwnd };
-
-    g_ipc.write_command(GLCommandType::WGLCMD_CREATE_CONTEXT, payload);
 
     return reinterpret_cast<HGLRC>(static_cast<UINT_PTR>(0xDEADBEEF));  // Dummy context handle
 }
