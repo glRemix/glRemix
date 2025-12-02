@@ -20,6 +20,8 @@ class DebugWindow
     float m_fps = 0.0f;
 
     std::vector<MeshRecord>* m_meshes = nullptr;
+    tsl::robin_map<UINT64, MeshRecord>* m_mesh_map = nullptr;
+
     uint64_t m_meshID_to_replace = -1;
     char m_asset_path_buffer[256] = "";
     std::function<void(uint64_t meshID, const char* asset_path)>
@@ -38,7 +40,8 @@ public:
 
     void render();
 
-    void set_mesh_buffer(std::vector<MeshRecord>& meshes);
+    void set_mesh_buffer(std::vector<MeshRecord>& meshes,
+                         tsl::robin_map<UINT64, MeshRecord>& mesh_map);
     void set_replace_mesh_callback(
         std::function<void(uint64_t meshID, const char* asset_path)> callback);
 };

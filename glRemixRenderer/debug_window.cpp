@@ -41,9 +41,11 @@ void DebugWindow::render()
 }
 
 // get mesh buffer from rt_app
-void DebugWindow::set_mesh_buffer(std::vector<MeshRecord>& meshes)
+void DebugWindow::set_mesh_buffer(std::vector<MeshRecord>& meshes,
+                                  tsl::robin_map<UINT64, MeshRecord>& mesh_map)
 {
     m_meshes = &meshes;
+    m_mesh_map = &mesh_map;
 }
 
 // get replace_mesh function from rt_app
@@ -61,12 +63,12 @@ void DebugWindow::render_mesh_ids()
     // render meshIDs and get selected mesh
     if (ImGui::BeginListBox("##assets"))
     {
-        for (int i = 0; i < m_meshes->size(); i++)
+        for (auto it = m_mesh_map->begin(); it != m_mesh_map->end();)
         {
-            MeshRecord& curr_mesh = (*m_meshes)[i];
-            uint64_t meshID = curr_mesh.mesh_id;
+            auto meshID = it->first;
+            auto& mesh = it->second;
 
-            ImGui::PushID(i);
+            ImGui::PushID(meshID);
 
             ImGui::BeginGroup();
 
@@ -80,17 +82,20 @@ void DebugWindow::render_mesh_ids()
 
             ImGui::SameLine();
 
-            bool visible = curr_mesh.visible;
+            bool visible = mesh.visible;
             if (ImGui::Checkbox("##visible", &visible))
             {
                 // toggle visibility
-                curr_mesh.visible = visible;
+                m_mesh_map->at(meshID).visible = visible;
             }
 
             ImGui::EndGroup();
 
             ImGui::PopID();
+
+            ++it;
         }
+
         ImGui::EndListBox();
     }
 

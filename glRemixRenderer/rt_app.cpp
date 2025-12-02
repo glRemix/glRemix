@@ -910,6 +910,11 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
     {
         const MeshRecord& mesh = state.m_meshes[i];
 
+        if (!mesh.visible)
+        {
+            continue;
+        }
+
         const auto blas_addr = m_mesh_resources[mesh.blas_vb_ib_idx].blas.get_gpu_address();
         assert(blas_addr);
 
@@ -1111,7 +1116,7 @@ void glRemix::glRemixRenderer::render()
     m_context.start_imgui_frame();
 
     // render imgui
-    m_debug_window.set_mesh_buffer(state.m_meshes);
+    m_debug_window.set_mesh_buffer(state.m_meshes, state.m_mesh_map);
     m_debug_window.render();
 
     // Build all pending buffers from geometry collected in read_gl_command_stream
@@ -1210,9 +1215,9 @@ void glRemix::glRemixRenderer::render()
         float nearZ = 0.1f;
         float farZ = 1000.0f;
 
-        XMMATRIX proj = XMMatrixPerspectiveFovRH(fov, aspect, nearZ, farZ);
+        //XMMATRIX proj = XMMatrixPerspectiveFovRH(fov, aspect, nearZ, farZ);
 
-        // XMMATRIX proj = XMLoadFloat4x4(&state.m_matrix_stack.top(GL_PROJECTION));
+        XMMATRIX proj = XMLoadFloat4x4(&state.m_matrix_stack.top(GL_PROJECTION));
 
         XMMATRIX inv_proj = XMMatrixInverse(nullptr, proj);
 

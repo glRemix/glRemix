@@ -215,10 +215,10 @@ float3 transform_to_world(float3 local_dir, float3 N)
 
         // diffuse
         float n_dot_l = max(dot(n_world, light_dir), 0.0);
-        float3 diffuse = mat.diffuse.rgb * tex_albedo * curr_light.diffuse.rgb * albedo * n_dot_l;
+        float3 diffuse = mat.diffuse.rgb * curr_light.diffuse.rgb * albedo * n_dot_l;
         
         // ambient
-        float3 ambient = mat.ambient.rgb * tex_albedo * curr_light.ambient.rgb * albedo;
+        float3 ambient = mat.ambient.rgb * curr_light.ambient.rgb * albedo;
 
         float3 color = (diffuse + ambient) * attenuation;
         final_color += color;
