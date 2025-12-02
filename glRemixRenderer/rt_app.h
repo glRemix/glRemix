@@ -74,7 +74,7 @@ class glRemixRenderer : public Application
     FreeListVector<TextureAndDescriptor> m_textures;
     tsl::robin_map<UINT32, TextureAndDescriptor> m_texture_map;
     TextureAndDescriptor m_environment;
-    bool m_create_env;
+    bool m_create_env = true;
     const char* m_env_path = nullptr;
 
     // Materials per buffer

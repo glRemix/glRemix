@@ -22,32 +22,43 @@ void glRemix::glRemixRenderer::create_environment_map(ID3D12GraphicsCommandList7
                                                       const char* path)
 {
     TextureAndDescriptor texture{};
-    ScratchImage image;
-    const float default_pixel[4] = { 0.f, 0.f, 0.f, 1.f };
+    std::array<float, 24> default_cubemap_pixels;
     const void* pixels;
+
+    // This needs to stay in scope
+    ScratchImage image;
+
+    auto set_fallback_texture = [&]()
+    {
+        // Fill all 6 faces with the same blue color
+        for (size_t i = 0; i < 6; ++i)
+        {
+            default_cubemap_pixels[i * 4 + 0] = 0.392f;
+            default_cubemap_pixels[i * 4 + 1] = 0.584f;
+            default_cubemap_pixels[i * 4 + 2] = 0.929f;
+            default_cubemap_pixels[i * 4 + 3] = 1.0f;
+        }
+        texture.texture.desc = {
+            1, 1, 6, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, D3D12_RESOURCE_DIMENSION_TEXTURE2D, false
+        };
+        pixels = default_cubemap_pixels.data();
+    };
 
     if (!path)
     {
-        texture.texture.desc = {
-            1, 1, 1, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, D3D12_RESOURCE_DIMENSION_TEXTURE2D, false
-        };
-        pixels = default_pixel;
+        set_fallback_texture();
     }
     else
     {
         TexMetadata metadata{};
 
-        std::wstring wpath(path, path + std::strlen(path));
-        HRESULT hr = LoadFromDDSFile(wpath.c_str(), DDS_FLAGS_NONE, &metadata, image);
+        const std::wstring wpath(path, path + std::strlen(path));
+        const HRESULT hr = LoadFromDDSFile(wpath.c_str(), DDS_FLAGS_NONE, &metadata, image);
 
         if (FAILED(hr) || !metadata.IsCubemap())
         {
             OutputDebugStringA("Env map: Load env from DDS file failed, using fallback\n");
-            texture.texture.desc = {
-                1,    1, 1, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-                false
-            };
-            pixels = default_pixel;
+            set_fallback_texture();
         }
         else
         {
@@ -56,10 +67,8 @@ void glRemix::glRemixRenderer::create_environment_map(ID3D12GraphicsCommandList7
             const UINT16 mips = static_cast<UINT16>(metadata.mipLevels ? metadata.mipLevels : 1);
             const UINT16 arrays = static_cast<UINT16>(metadata.arraySize);
 
-            DXGI_FORMAT format = metadata.format;
-
-            texture.texture.desc = { width, height, arrays,
-                                     mips,  format, D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+            texture.texture.desc = { width, height,          arrays,
+                                     mips,  metadata.format, D3D12_RESOURCE_DIMENSION_TEXTURE2D,
                                      false };
 
             pixels = image.GetPixels();
@@ -131,8 +140,6 @@ void glRemix::glRemixRenderer::create_mesh_record_buffer()
 
 void glRemix::glRemixRenderer::create()
 {
-    m_create_env = true;
-
     for (UINT i = 0; i < m_frames_in_flight; i++)
     {
         THROW_IF_FALSE(m_context.create_command_allocator(&m_cmd_pools[i], &m_gfx_queue,
