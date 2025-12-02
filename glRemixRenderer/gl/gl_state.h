@@ -16,6 +16,7 @@ public:
 
     HWND hwnd;
     bool m_create_context;
+    bool m_swapchain_creation_deferred = false;
 
     XMFLOAT4 m_color = { 1.0f, 1.0f, 1.0f, 1.0f };
     XMFLOAT3 m_normal = { 0.0f, 0.0f, 1.0f };  // Default according to spec

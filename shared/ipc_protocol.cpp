@@ -1,11 +1,11 @@
 #include "ipc_protocol.h"
 
-#include <sstream>
-#include <algorithm>
+#include "debug_utils.h"
+
 #include <thread>
 #include <chrono>
 
-#include <format>
+#include <system_error>
 
 void glRemix::IPCProtocol::init_writer()
 {
@@ -37,17 +37,21 @@ void glRemix::IPCProtocol::start_frame_or_wait()
 
         HANDLE tmp_events[2] = { oldest->smem.get_read_event(), latest->smem.get_read_event() };
 
-        DWORD dw_wait_result = WaitForMultipleObjects(2, tmp_events, false, INFINITE);
+        DWORD dw_wait_result = WaitForMultipleObjects(2, tmp_events, false, k_GLOBAL_TIMEOUT_MS);
 
         switch (dw_wait_result)
         {
             case WAIT_OBJECT_0:
                 m_curr_slot = oldest;
                 DBG_PRINT("IPCProtocol.WRITER - Oldest SharedMemory slot became available to "
-                          "write_simple "
-                          "before latest.");  // theoretically should not occur
+                          "write before latest.");  // theoretically should not occur
                 break;
             case WAIT_OBJECT_0 + 1: m_curr_slot = latest; break;
+            case WAIT_TIMEOUT:
+                throw std::system_error(
+                    ERROR_TIMEOUT, std::system_category(),
+                    "IPCProtocol.WRITER - Timed out while waiting for IPC memory to become "
+                    "available to write. Check the READER process for stalls.");
             default:
                 // this is a runtime_error as it is unpredictable to my knowledge
                 throw std::runtime_error(FSTR(
@@ -136,7 +140,7 @@ void glRemix::IPCProtocol::consume_frame_or_wait(void* payload, UINT32* frame_in
 
         HANDLE tmp_events[2] = { oldest->smem.get_write_event(), latest->smem.get_write_event() };
 
-        DWORD dw_wait_result = WaitForMultipleObjects(2, tmp_events, false, INFINITE);
+        DWORD dw_wait_result = WaitForMultipleObjects(2, tmp_events, false, k_GLOBAL_TIMEOUT_MS);
 
         switch (dw_wait_result)
         {
@@ -146,6 +150,11 @@ void glRemix::IPCProtocol::consume_frame_or_wait(void* payload, UINT32* frame_in
                 DBG_PRINT("IPCProtocol.READER - Latest SharedMemory slot became available to read "
                           "before oldest.");
                 break;  // theoretically should not occur
+            case WAIT_TIMEOUT:
+                throw std::system_error(
+                    ERROR_TIMEOUT, std::system_category(),
+                    "IPCProtocol.READER - Timed out while waiting for IPC memory to become "
+                    "available to read. Check the WRITER process for stalls.");
             default:
                 // this is a runtime_error as it is unpredictable to my knowledge
                 throw std::runtime_error(FSTR(

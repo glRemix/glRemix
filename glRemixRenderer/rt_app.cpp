@@ -35,7 +35,7 @@ void glRemix::glRemixRenderer::create_default_env(ID3D12GraphicsCommandList7* cm
     m_context.copy_to_texture(cmd_list, default_pixel, &staging, &texture.texture);
 
     m_environment = texture;
-    
+
     // does not allocate descriptor of create srv
 }
 
@@ -581,7 +581,8 @@ void glRemix::glRemixRenderer::create_pending_textures(ID3D12GraphicsCommandList
 
     for (auto& kv : state.m_pending_textures)
     {
-        PendingTexture& pending = const_cast<PendingTexture&>(kv.second); // TODO fix this constness error
+        PendingTexture& pending = const_cast<PendingTexture&>(
+            kv.second);  // TODO fix this constness error
 
         UINT32 mipLevels = pending.max_level + 1;
         pending.desc.mip_levels = mipLevels;
@@ -657,7 +658,6 @@ void glRemix::glRemixRenderer::create_pending_textures(ID3D12GraphicsCommandList
             w = std::max(1u, w >> 1);
             h = std::max(1u, h >> 1);
         }
-
 
         m_texture_upload_buffers[get_frame_index()].emplace_back();
         dx::D3D12Buffer& staging = m_texture_upload_buffers[get_frame_index()].back();
@@ -1192,9 +1192,19 @@ void glRemix::glRemixRenderer::render()
     m_texture_upload_buffers[get_frame_index()].clear();
     sm_driver.process_stream();
 
+    XMUINT2 dims;
     if (state.m_create_context)
     {
-        create_swapchain_and_rts(state.hwnd);
+        if (dx::D3D12Context::s_get_window_dimensions(&dims, state.hwnd) && dims.x > 0 && dims.y > 0)
+        {
+            create_swapchain_and_rts(state.hwnd);
+            state.m_swapchain_creation_deferred = false;
+        }
+        else
+        {
+            state.m_swapchain_creation_deferred = true;
+            return;  // skip rendering frame
+        }
     }
 
     // TODO: In general resource creation should be moved to its own dedicated thread
@@ -1251,7 +1261,7 @@ void glRemix::glRemixRenderer::render()
     const auto swapchain_idx = m_context.get_swapchain_index();
 
     XMUINT2 win_dims{};
-    m_context.get_window_dimensions(&win_dims);
+    m_context.s_get_window_dimensions(&win_dims, m_context.get_window());
 
     // Set viewport, scissor
     const D3D12_VIEWPORT viewport{
@@ -1371,7 +1381,6 @@ void glRemix::glRemixRenderer::render()
         create_environment_map(cmd_list.Get(), m_env_path);
         m_create_env = false;
     }
-
 
     // Dispatch rays to UAV render target
     if (!state.m_meshes.empty())
@@ -1624,7 +1633,7 @@ void glRemix::glRemixRenderer::create_swapchain_and_rts(HWND hwnd)
 void glRemix::glRemixRenderer::create_uav_rt()
 {
     XMUINT2 win_dims{};
-    THROW_IF_FALSE(m_context.get_window_dimensions(&win_dims));
+    THROW_IF_FALSE(m_context.s_get_window_dimensions(&win_dims, m_context.get_window()));
 
     const dx::TextureDesc uav_rt_desc{
         .width = win_dims.x,

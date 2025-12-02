@@ -208,15 +208,17 @@ bool D3D12Context::create(const bool enable_debug_layer)
     return create_fence(&m_fence_wait_all, 0, "wait all fence");
 }
 
-bool D3D12Context::get_window_dimensions(XMUINT2* dims)
+bool D3D12Context::s_get_window_dimensions(XMUINT2* dims, const HWND window)
 {
-    assert(m_window);
+    assert(window);
     RECT client_rect;
-    if (!GetClientRect(m_window, &client_rect))
+
+    if (!GetClientRect(window, &client_rect))
     {
         OutputDebugStringA("WinUser ERROR: Failed to get client rect\n");
         return false;
     }
+
     dims->x = client_rect.right - client_rect.left;
     dims->y = client_rect.bottom - client_rect.top;
     return true;
@@ -231,7 +233,7 @@ bool D3D12Context::create_swapchain(const HWND window, D3D12Queue* const queue,
 
     // I hope the host app doesn't immediately resize the window after creation!
     XMUINT2 dims;
-    if (!get_window_dimensions(&dims))
+    if (!s_get_window_dimensions(&dims, window))
     {
         return false;
     }

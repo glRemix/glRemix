@@ -1,5 +1,9 @@
 #include "application.h"
 
+#include <system_error>
+
+#include <shared/debug_utils.h>
+
 using namespace glRemix;
 
 void Application::run_with_hwnd(const bool enable_debug_layer)
@@ -38,10 +42,28 @@ void Application::run_with_hwnd(const bool enable_debug_layer)
             }
         }
 
-        // TODO: Get quit signal from IPC and get it out of the app class?
-        // Right now this process just gets killed externally
-        render();
+        try
+        {
+            render();
+        }
+        catch (const std::system_error& e)
+        {
+            if (e.code().value() == ERROR_TIMEOUT)
+            {
+                DBG_PRINT("GLRemixApp - Renderer exited gracefully from IPC timeout.");
+
+                quit = true;
+                continue;
+            }
+            throw;  // continue error propogation
+        }
     }
+
+#if 1
+    // TODO: add some other custom goodbye? or remove
+    MessageBoxTimeoutW(nullptr, L"Thanks for using glRemix!", L"glRemixRenderer",
+                       MB_OK | MB_ICONINFORMATION, 0, 5000);
+#endif
 
     THROW_IF_FALSE(m_context.wait_idle(&m_gfx_queue));
     destroy();

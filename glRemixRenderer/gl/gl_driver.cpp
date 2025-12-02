@@ -537,12 +537,11 @@ static void handle_tex_image_2d(const GLCommandContext& ctx, const void* data)
     if (tex.levels.empty())
     {
         tex.desc = {
-            width,
-            height,
-            1,       // depth_or_array_size
-            1,       // mip_levels
-            fmt,    D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-            false   // not render target
+            width, height,
+            1,     // depth_or_array_size
+            1,     // mip_levels
+            fmt,   D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+            false  // not render target
         };
     }
 
@@ -559,7 +558,7 @@ static void handle_tex_image_2d(const GLCommandContext& ctx, const void* data)
     const bool to_rgba = (cmd->format == GL_RGB) && (cmd->type == GL_UNSIGNED_BYTE);
 
     const size_t pixel_count = size_t(width) * size_t(height);
-    const size_t dst_bpp = 4; // TODO add additional cases (currently just RGBA)
+    const size_t dst_bpp = 4;  // TODO add additional cases (currently just RGBA)
 
     lvl.pixels.resize(pixel_count * dst_bpp);
 
@@ -581,7 +580,7 @@ static void handle_tex_image_2d(const GLCommandContext& ctx, const void* data)
     }
     else
     {
-        const size_t src_bpp = dst_bpp; // TODO add additional cases
+        const size_t src_bpp = dst_bpp;  // TODO add additional cases
         const auto* src = static_cast<const UINT8*>(data_ptr);
         auto* dst = lvl.pixels.data();
         memcpy(dst, src, pixel_count * src_bpp);
@@ -1028,7 +1027,7 @@ static void handle_disable(const GLCommandContext& ctx, const void* data)
 // OTHER
 static void handle_wgl_create_context(const GLCommandContext& ctx, const void* data)
 {
-    const auto cmd = static_cast<const WGLCreateContextCommand*>(data);
+    const auto cmd = static_cast<const GLRemixSendHWNDCommand*>(data);
     ctx.state.hwnd = cmd->hwnd;
     ctx.state.m_create_context = true;
 }
@@ -1116,7 +1115,7 @@ void glRemix::glDriver::init_handlers()
     gl_command_handlers[static_cast<size_t>(GLCMD_END_LIST)] = &handle_end_list;
 
     // OTHER
-    gl_command_handlers[static_cast<size_t>(WGLCMD_CREATE_CONTEXT)] = &handle_wgl_create_context;
+    gl_command_handlers[static_cast<size_t>(GLREMIXCMD_SEND_HWND)] = &handle_wgl_create_context;
     gl_command_handlers[static_cast<size_t>(WGLCMD_INPUT_EVENT)] = &handle_wgl_input_event;
 }
 
@@ -1145,13 +1144,16 @@ void glRemix::glDriver::process_stream()
 
     m_state.m_current_frame = frame_index;
 
-    // reset per frames
-    m_state.m_create_context = false;
-    m_state.m_meshes.clear();              // per frame meshes
-    m_state.m_matrix_pool.clear();         // reset matrix pool each frame
-    m_state.m_materials.clear();
-    m_state.m_pending_geometries.clear();  // clear pending geometry data
-    m_state.m_pending_textures.clear();
+    if (!m_state.m_swapchain_creation_deferred)
+    {
+        // reset per frames
+        m_state.m_create_context = false;
+        m_state.m_meshes.clear();              // per frame meshes
+        m_state.m_matrix_pool.clear();         // reset matrix pool each frame
+        m_state.m_materials.clear();
+        m_state.m_pending_geometries.clear();  // clear pending geometry data
+        m_state.m_pending_textures.clear();
+    }
 
     m_state.m_offset = 0;
     GLCommandContext ctx{ m_state, *this };

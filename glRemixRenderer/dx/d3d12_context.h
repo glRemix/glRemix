@@ -60,7 +60,7 @@ class D3D12Context
 public:
     bool create(bool enable_debug_layer);
 
-    bool get_window_dimensions(XMUINT2* dims);
+    static bool s_get_window_dimensions(XMUINT2* dims, const HWND window);
 
     bool create_swapchain(HWND window, D3D12Queue* queue, UINT* frame_index);
     bool create_swapchain_descriptors(D3D12Descriptor* descriptors, D3D12DescriptorHeap* rtv_heap);
@@ -99,7 +99,7 @@ public:
     void create_shader_resource_view_texture(const D3D12Texture& texture, DXGI_FORMAT format,
                                              const D3D12Descriptor& descriptor) const;
     void create_shader_resource_view_texture_cube(const D3D12Texture& texture, DXGI_FORMAT format,
-                                             const D3D12Descriptor& descriptor) const;
+                                                  const D3D12Descriptor& descriptor) const;
 
     void copy_descriptors(const D3D12Descriptor& dest_start, const D3D12Descriptor& src_start,
                           UINT count) const;

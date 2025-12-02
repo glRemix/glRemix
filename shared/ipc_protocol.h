@@ -21,6 +21,11 @@ constexpr const wchar_t* k_READ_EVENT_B = L"Local\\glRemix_ReadEvent_B";
 
 constexpr UINT32 k_MAX_IPC_PAYLOAD = k_DEFAULT_CAPACITY - sizeof(GLFrameHeader);
 
+constexpr DWORD k_READER_INIT_TIMEOUT_MS = 60000;  // 1 minute timeout for graphics debugger workflow
+constexpr DWORD k_READER_INIT_RETRY_MS = 50;
+
+constexpr DWORD k_GLOBAL_TIMEOUT_MS = 5000;  // 5 second timeout for all `WaitForXXX` operations
+
 // For now, a simple manager for `SharedMemory
 class IPCProtocol
 {
