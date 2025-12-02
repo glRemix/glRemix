@@ -1282,11 +1282,7 @@ void glRemix::glRemixRenderer::render()
     build_tlas(cmd_list.Get());
 
     // build environment map
-    if (m_create_env)
-    {
-        create_environment_map(cmd_list.Get(), m_env_path);
-        m_create_env = false;
-    }
+    std::call_once(m_create_env_once, [&]() { create_environment_map(cmd_list.Get(), m_env_path); });
 
     // Dispatch rays to UAV render target
     if (!state.m_meshes.empty())

@@ -18,6 +18,7 @@
 #include <shared/containers/free_list_vector.h>
 
 #include <filesystem>
+#include <mutex>
 
 #include "gl/gl_driver.h"
 
@@ -74,7 +75,7 @@ class glRemixRenderer : public Application
     FreeListVector<TextureAndDescriptor> m_textures;
     tsl::robin_map<UINT32, TextureAndDescriptor> m_texture_map;
     TextureAndDescriptor m_environment;
-    bool m_create_env = true;
+    std::once_flag m_create_env_once{};
     const char* m_env_path = nullptr;
 
     // Materials per buffer
