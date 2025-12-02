@@ -51,7 +51,6 @@ float3 direct_lighting(float3 hit_pos, float3 N, float3 albedo)
 {
     float3 direct = 0.0f;
 
-    [unroll]
     for (int i = 0; i < 8; ++i)
     {
         Light curr_light = light_cb.lights[i];
@@ -276,10 +275,10 @@ void generate_camera_ray(float2 uv, out float3 origin, out float3 dir)
         
         float2 pixelSize = float2(1.0f / g_raygen_cb.width, 1.0f / g_raygen_cb.height);
         
-        float3 rxOrigin, rxDir;
-        float3 ryOrigin, ryDir;
-        generate_camera_ray(jittered_uv + float2(pixelSize.x, 0.0f), rxOrigin, rxDir);
-        generate_camera_ray(jittered_uv + float2(0.0f, pixelSize.y), ryOrigin, ryDir);
+        float3 rx_origin, rx_dir;
+        float3 ry_origin, ry_dir;
+        generate_camera_ray(jittered_uv + float2(pixelSize.x, 0.0f), rx_origin, rx_dir);
+        generate_camera_ray(jittered_uv + float2(0.0f, pixelSize.y), ry_origin, ry_dir);
 
         float3 sample_color = float3(0, 0, 0);
         float3 throughput = 1.0;
@@ -289,12 +288,12 @@ void generate_camera_ray(float2 uv, out float3 origin, out float3 dir)
             RayPayload payload;
             payload.hit = false;
 
-            payload.rayOrigin = origin;
-            payload.rayDir = ray_dir;
-            payload.rxOrigin = rxOrigin;
-            payload.rxDir = rxDir;
-            payload.ryOrigin = ryOrigin;
-            payload.ryDir = ryDir;
+            payload.ray_origin = origin;
+            payload.ray_dir = ray_dir;
+            payload.rx_origin = rx_origin;
+            payload.rx_dir = rx_dir;
+            payload.ry_origin = ry_origin;
+            payload.ry_dir = ry_dir;
             
             payload.depth = bounce;
             
@@ -415,14 +414,14 @@ void generate_camera_ray(float2 uv, out float3 origin, out float3 dir)
 
         if (payload.depth == 0)
         {
-            float3 origin = payload.rayOrigin;
-            float3 rDirection = payload.rayDir;
+            float3 origin = payload.ray_origin;
+            float3 rDirection = payload.ray_dir;
 
-            float3 xorigin = payload.rxOrigin;
-            float3 rxDirection = payload.rxDir;
+            float3 xorigin = payload.rx_origin;
+            float3 rxDirection = payload.rx_dir;
 
-            float3 yorigin = payload.ryOrigin;
-            float3 ryDirection = payload.ryDir;
+            float3 yorigin = payload.ry_origin;
+            float3 ryDirection = payload.ry_dir;
 
             float3 p0 = v0.position;
             float3 p1 = v1.position;

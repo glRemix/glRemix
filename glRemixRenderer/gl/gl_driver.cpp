@@ -7,21 +7,6 @@ LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARA
 
 namespace glRemix
 {
-inline Material MakeDebugMaterial()
-{
-    Material m{};
-
-    // Something extremely obvious (bright magenta)
-    m.ambient = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
-    m.diffuse = XMFLOAT4(1.0f, 0.0f, 1.0f, 1.0f);  // MAGENTA
-    m.specular = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
-    m.emission = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
-
-    m.shininess = 0.0f;
-
-    return m;
-}
-
 static void hash_and_commit_geometry(glState& state, const size_t* client_indices = nullptr)
 {
     if (!state.m_perspective || state.t_indices.empty())
@@ -515,6 +500,44 @@ static void handle_delete_textures(const GLCommandContext& ctx, const void* data
     // the com pointer will simply be dropped
 }
 
+static size_t compute_mip_offset(UINT32 width, UINT32 height, UINT32 level, size_t bpp)
+{
+    size_t offset = 0;
+    UINT32 w = width;
+    UINT32 h = height;
+
+    for (UINT32 l = 0; l < level; ++l)
+    {
+        const UINT32 mipW = std::max(1u, w);
+        const UINT32 mipH = std::max(1u, h);
+        offset += static_cast<size_t>(mipW) * mipH * bpp;
+
+        w = std::max(1u, w >> 1);
+        h = std::max(1u, h >> 1);
+    }
+
+    return offset;
+}
+
+static size_t compute_total_size(UINT32 width, UINT32 height, UINT32 max_level, size_t bpp)
+{
+    size_t total = 0;
+    UINT32 w = width;
+    UINT32 h = height;
+
+    for (UINT32 l = 0; l < max_level; ++l)
+    {
+        const UINT32 mipW = std::max(1u, w);
+        const UINT32 mipH = std::max(1u, h);
+        total += size_t(mipW) * mipH * bpp;
+
+        w = std::max(1u, w >> 1);
+        h = std::max(1u, h >> 1);
+    }
+
+    return total;
+}
+
 static void handle_tex_image_2d(const GLCommandContext& ctx, const void* data)
 {
     const auto* cmd = static_cast<const GLTexImage2DCommand*>(data);
@@ -523,51 +546,76 @@ static void handle_tex_image_2d(const GLCommandContext& ctx, const void* data)
     const void* data_ptr = bytes + sizeof(GLTexImage2DCommand);
 
     glState& state = ctx.state;
-    const UINT32 gl_tex = state.m_bound_texture;
 
-    PendingTexture& tex = state.m_pending_textures[gl_tex];
-    tex.index = gl_tex;
+    PendingTexture& tex = state.m_pending_textures[state.m_bound_texture];
+    tex.index = state.m_bound_texture;
 
     const UINT32 level = cmd->level;
-    const UINT32 width = static_cast<UINT32>(cmd->width);
-    const UINT32 height = static_cast<UINT32>(cmd->height);
+    const UINT32 width = cmd->width;
+    const UINT32 height = cmd->height;
     const DXGI_FORMAT fmt = gl_format_to_dxgi(cmd->format, cmd->type);
 
-    // initialize base-level desc
-    if (tex.levels.empty())
-    {
-        tex.desc = {
-            width, height,
-            1,     // depth_or_array_size
-            1,     // mip_levels
-            fmt,   D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-            false  // not render target
-        };
-    }
-
-    if (tex.levels.size() <= level)
-    {
-        tex.levels.resize(level + 1);
-    }
-
-    PendingTextureLevel& lvl = tex.levels[level];
-    lvl.width = width;
-    lvl.height = height;
-
     // RGB + GL_UNSIGNED_BYTE doesn't exist so need to fill with alpha value
+    const size_t dst_bpp = 4;  // TODO add additional cases (currently just RGBA)
     const bool to_rgba = (cmd->format == GL_RGB) && (cmd->type == GL_UNSIGNED_BYTE);
 
-    const size_t pixel_count = size_t(width) * size_t(height);
-    const size_t dst_bpp = 4;  // TODO add additional cases (currently just RGBA)
+    // initialize base-level desc
+    if (!tex.initialized)
+    {
+        UINT32 base_width = width;
+        UINT32 base_height = height;
 
-    lvl.pixels.resize(pixel_count * dst_bpp);
+        // if first call is not level 0 infer base width
+        if (level > 0)
+        {
+            base_width <<= level;
+            base_height <<= level;
+        }
+
+        tex.desc = {
+            base_width,
+            base_height,
+            1,
+            static_cast<UINT16>(level + 1),  // mip_levels (at least level+1)
+            fmt,
+            D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+            false  // not render target
+        };
+
+        tex.initialized = true;
+        tex.max_level = level;
+    }
+    else
+    {
+        tex.max_level = std::max(tex.max_level, level);
+        tex.desc.mip_levels = static_cast<UINT16>(tex.max_level + 1);
+    }
+
+    const UINT32 base_width = tex.desc.width;
+    const UINT32 base_height = tex.desc.height;
+
+    const UINT32 mip_width = std::max(1u, base_width >> level);
+    const UINT32 mip_height = std::max(1u, base_height >> level);
+
+    const size_t mip_pixel_count = static_cast<size_t>(mip_width) * static_cast<size_t>(mip_height);
+    const size_t mip_bytes = mip_pixel_count * dst_bpp;
+
+    const size_t total_bytes = compute_total_size(base_width, base_height, tex.max_level + 1,
+                                                  dst_bpp);
+
+    if (tex.pixels.size() < total_bytes)
+    {
+        tex.pixels.resize(total_bytes);
+    }
+
+    const size_t mip_offset = compute_mip_offset(base_width, base_height, level, dst_bpp);
+    UINT8* dst = tex.pixels.data() + mip_offset;
 
     if (to_rgba)
     {
         const auto* src = static_cast<const UINT8*>(data_ptr);
-        auto* dst = lvl.pixels.data();
 
-        for (size_t i = 0; i < pixel_count; ++i)
+        for (size_t i = 0; i < mip_pixel_count; ++i)
         {
             const size_t src_idx = i * 3;
             const size_t dst_idx = i * 4;
@@ -580,14 +628,12 @@ static void handle_tex_image_2d(const GLCommandContext& ctx, const void* data)
     }
     else
     {
-        const size_t src_bpp = dst_bpp;  // TODO add additional cases
+        const size_t src_bpp = dst_bpp;
         const auto* src = static_cast<const UINT8*>(data_ptr);
-        auto* dst = lvl.pixels.data();
-        memcpy(dst, src, pixel_count * src_bpp);
+        memcpy(dst, src, mip_pixel_count * src_bpp);
     }
 
     tex.index = state.m_bound_texture;
-    tex.max_level = std::max(tex.max_level, level);
 }
 
 static void handle_tex_param(const GLCommandContext& ctx, const void* data)

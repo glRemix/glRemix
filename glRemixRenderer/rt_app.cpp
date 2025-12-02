@@ -18,64 +18,43 @@
 
 glRemix::glDriver glRemix::glRemixRenderer::sm_driver;
 
-void glRemix::glRemixRenderer::create_default_env(ID3D12GraphicsCommandList7* cmd_list)
-{
-    TextureAndDescriptor texture{};
-    texture.texture.desc = {
-        1, 1, 1, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, D3D12_RESOURCE_DIMENSION_TEXTURE2D, false
-    };
-
-    static const float default_pixel[4] = { 0.f, 0.f, 0.f, 1.f };
-
-    THROW_IF_FALSE(m_context.create_texture(texture.texture.desc, D3D12_BARRIER_LAYOUT_COPY_DEST,
-                                            &texture.texture, nullptr, "env_map_fallback"));
-
-    m_texture_upload_buffers[get_frame_index()].emplace_back();
-    dx::D3D12Buffer& staging = m_texture_upload_buffers[get_frame_index()].back();
-    m_context.copy_to_texture(cmd_list, default_pixel, &staging, &texture.texture);
-
-    m_environment = texture;
-
-    // does not allocate descriptor of create srv
-}
-
 void glRemix::glRemixRenderer::create_environment_map(ID3D12GraphicsCommandList7* cmd_list,
                                                       const char* path)
 {
-    bool is_cubemap = false;
+    TextureAndDescriptor texture{};
+    ScratchImage image;
+    const float default_pixel[4] = { 0.f, 0.f, 0.f, 1.f };
+    const void* pixels;
 
     if (!path)
     {
-        create_default_env(cmd_list);
+        texture.texture.desc = {
+            1, 1, 1, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, D3D12_RESOURCE_DIMENSION_TEXTURE2D, false
+        };
+        pixels = default_pixel;
     }
     else
     {
         TexMetadata metadata{};
-        ScratchImage image;
 
         std::wstring wpath(path, path + std::strlen(path));
         HRESULT hr = LoadFromDDSFile(wpath.c_str(), DDS_FLAGS_NONE, &metadata, image);
 
-        if (FAILED(hr))
+        if (FAILED(hr) || !metadata.IsCubemap())
         {
             OutputDebugStringA("Env map: Load env from DDS file failed, using fallback\n");
-            create_default_env(cmd_list);
+            texture.texture.desc = {
+                1,    1, 1, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+                false
+            };
+            pixels = default_pixel;
         }
         else
         {
-            is_cubemap = metadata.IsCubemap() != 0;
-
-            if (!is_cubemap)
-            {
-                OutputDebugStringA("Env map: Expected cubemap DDS, got non-cubemap; using as 2D\n");
-            }
-
-            TextureAndDescriptor texture{};
-
             const UINT width = static_cast<UINT>(metadata.width);
             const UINT height = static_cast<UINT>(metadata.height);
             const UINT16 mips = static_cast<UINT16>(metadata.mipLevels ? metadata.mipLevels : 1);
-            const UINT16 arrays = static_cast<UINT16>(is_cubemap ? metadata.arraySize : 1);
+            const UINT16 arrays = static_cast<UINT16>(metadata.arraySize);
 
             DXGI_FORMAT format = metadata.format;
 
@@ -83,37 +62,27 @@ void glRemix::glRemixRenderer::create_environment_map(ID3D12GraphicsCommandList7
                                      mips,  format, D3D12_RESOURCE_DIMENSION_TEXTURE2D,
                                      false };
 
-            THROW_IF_FALSE(m_context.create_texture(texture.texture.desc,
-                                                    D3D12_BARRIER_LAYOUT_COPY_DEST,
-                                                    &texture.texture, nullptr, "env_map"));
-
-            const void* pixels = image.GetPixels();
-
-            m_texture_upload_buffers[get_frame_index()].emplace_back();
-            dx::D3D12Buffer& staging = m_texture_upload_buffers[get_frame_index()].back();
-            m_context.copy_to_texture(cmd_list, pixels, &staging, &texture.texture);
-
-            m_environment.texture = texture.texture;
+            pixels = image.GetPixels();
         }
     }
+
+    THROW_IF_FALSE(m_context.create_texture(texture.texture.desc, D3D12_BARRIER_LAYOUT_COPY_DEST,
+                                            &texture.texture, nullptr, "env_map"));
+
+    m_texture_upload_buffers[get_frame_index()].emplace_back();
+    dx::D3D12Buffer& staging = m_texture_upload_buffers[get_frame_index()].back();
+    m_context.copy_to_texture(cmd_list, pixels, &staging, &texture.texture);
+
+    m_environment.texture = texture.texture;
 
     if (m_environment.descriptor.offset == dx::CREATE_NEW_DESCRIPTOR)
     {
         THROW_IF_FALSE(m_CPU_descriptor_heap.allocate(&m_environment.descriptor));
     }
 
-    if (is_cubemap)
-    {
-        m_context.create_shader_resource_view_texture_cube(m_environment.texture,
-                                                           m_environment.texture.desc.format,
-                                                           m_environment.descriptor);
-    }
-    else
-    {
-        m_context.create_shader_resource_view_texture(m_environment.texture,
-                                                      m_environment.texture.desc.format,
-                                                      m_environment.descriptor);
-    }
+    m_context.create_shader_resource_view_texture_cube(m_environment.texture,
+                                                       m_environment.texture.desc.format,
+                                                       m_environment.descriptor);
 }
 
 void glRemix::glRemixRenderer::create_material_buffer()
@@ -584,84 +553,14 @@ void glRemix::glRemixRenderer::create_pending_textures(ID3D12GraphicsCommandList
         PendingTexture& pending = const_cast<PendingTexture&>(
             kv.second);  // TODO fix this constness error
 
-        UINT32 mipLevels = pending.max_level + 1;
-        pending.desc.mip_levels = mipLevels;
-
         TextureAndDescriptor texture;
         texture.texture.desc = pending.desc;
-
-        // Create texture directly in COPY_DEST layout for the upload
         THROW_IF_FALSE(m_context.create_texture(pending.desc, D3D12_BARRIER_LAYOUT_COPY_DEST,
                                                 &texture.texture, nullptr, "texture"));
 
-        // pack all mips
-        const UINT32 bpp = 4;  // RGBA8
-        size_t totalSize = 0;
-
-        {
-            UINT32 w = pending.desc.width;
-            UINT32 h = pending.desc.height;
-            for (UINT32 level = 0; level < mipLevels; ++level)
-            {
-                const UINT32 mipW = std::max(1u, w);
-                const UINT32 mipH = std::max(1u, h);
-                totalSize += size_t(mipW) * mipH * bpp;
-
-                w = std::max(1u, w >> 1);
-                h = std::max(1u, h >> 1);
-            }
-        }
-
-        std::vector<uint8_t> packed;
-        packed.resize(totalSize);
-
-        size_t dstOffset = 0;
-        UINT32 w = pending.desc.width;
-        UINT32 h = pending.desc.height;
-
-        for (UINT32 level = 0; level < mipLevels; ++level)
-        {
-            const UINT32 mipW = std::max(1u, w);
-            const UINT32 mipH = std::max(1u, h);
-
-            const PendingTextureLevel* lvl = nullptr;
-            if (level < pending.levels.size() && !pending.levels[level].pixels.empty())
-            {
-                lvl = &pending.levels[level];
-            }
-
-            if (!lvl)
-            {
-                // reuse previous level fallback
-                if (level > 0 && !pending.levels[level - 1].pixels.empty())
-                {
-                    const auto& prev = pending.levels[level - 1];
-                    const size_t srcSize = prev.pixels.size();
-
-                    memcpy(packed.data() + dstOffset, prev.pixels.data(),
-                           std::min(srcSize, size_t(mipW) * mipH * bpp));
-                }
-                else
-                {
-                    // default fallback
-                    memset(packed.data() + dstOffset, 0xFF, size_t(mipW) * mipH * bpp);
-                }
-            }
-            else
-            {
-                const size_t expectedSize = size_t(mipW) * mipH * bpp;
-                memcpy(packed.data() + dstOffset, lvl->pixels.data(), expectedSize);
-            }
-
-            dstOffset += size_t(mipW) * mipH * bpp;
-
-            w = std::max(1u, w >> 1);
-            h = std::max(1u, h >> 1);
-        }
-
         m_texture_upload_buffers[get_frame_index()].emplace_back();
         dx::D3D12Buffer& staging = m_texture_upload_buffers[get_frame_index()].back();
-        m_context.copy_to_texture(cmd_list, packed.data(), &staging, &texture.texture);
+        m_context.copy_to_texture(cmd_list, pending.pixels.data(), &staging, &texture.texture);
 
         texture.page_index = m_descriptor_pager.allocate_descriptor(m_context,
                                                                     dx::DescriptorPager::TEXTURES,
