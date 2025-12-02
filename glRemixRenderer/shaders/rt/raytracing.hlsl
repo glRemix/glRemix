@@ -51,7 +51,6 @@ float3 direct_lighting(float3 hit_pos, float3 N, float3 albedo)
 {
     float3 direct = 0.0f;
 
-    [unroll]
     for (int i = 0; i < 8; ++i)
     {
         Light curr_light = light_cb.lights[i];
@@ -304,7 +303,6 @@ void generate_camera_ray(float2 uv, out float3 origin, out float3 dir)
             ray.TMin = 0.001;
             ray.TMax = 10000.0;
 
-            // Note winding order if you don't see anything
             TraceRay(scene, RAY_FLAG_NONE, ~0, 0, 1, 0, ray, payload);
 
             if (!payload.hit)
@@ -341,8 +339,6 @@ void generate_camera_ray(float2 uv, out float3 origin, out float3 dir)
     final_color /= num_samples_per_pixel; // average samples
     
     render_target[DispatchRaysIndex().xy] = float4(final_color, 1.0);
-    // RenderTarget[DispatchRaysIndex().xy] = float4(uv, 0.0, 1.0);
-    // RenderTarget[DispatchRaysIndex().xy] = float4(ray_dir * 0.5 + 0.5, 1.0);
 }
 
 [shader("closesthit")]void ClosestHitMain(inout RayPayload payload, in TriAttributes attr)
@@ -364,11 +360,6 @@ void generate_camera_ray(float2 uv, out float3 origin, out float3 dir)
     const Vertex v0 = vb[i0];
     const Vertex v1 = vb[i1];
     const Vertex v2 = vb[i2];
-
-    //// DEBUG
-    // payload.color = float4(v0.position, 1.0); payload.hit = true; return;
-    // payload.color = float4(v0.color, 1.0); payload.hit = true; return;
-    // payload.color = float4(v0.normal * 0.5 + 0.5, 1.0); payload.hit = true; return;
 
     float3 bary;
     bary.yz = attr.barycentrics;

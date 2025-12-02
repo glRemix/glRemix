@@ -594,24 +594,14 @@ bool D3D12Context::copy_to_texture(ID3D12GraphicsCommandList7* cmd_list, const v
 
         const UINT8* src = static_cast<const UINT8*>(data) + offset;
 
-        if (desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D)
+        for (UINT z = 0; z < mip_depth; z++)
         {
-            for (UINT z = 0; z < mip_depth; z++)
-            {
-                UINT8* dst_slice = &dst[z * slice_pitch];
-                const UINT8* src_slice = &src[z * mip_height * bytes_per_row];
+            UINT8* dst_slice = &dst[z * slice_pitch];
+            const UINT8* src_slice = &src[z * mip_height * bytes_per_row];
 
-                for (UINT y = 0; y < mip_height; y++)
-                {
-                    memcpy(&dst_slice[y * row_pitch], &src_slice[y * bytes_per_row], bytes_per_row);
-                }
-            }
-        }
-        else
-        {
             for (UINT y = 0; y < mip_height; y++)
             {
-                memcpy(&dst[y * row_pitch], &src[y * bytes_per_row], bytes_per_row);
+                memcpy(&dst_slice[y * row_pitch], &src_slice[y * bytes_per_row], bytes_per_row);
             }
         }
 
