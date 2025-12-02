@@ -1396,8 +1396,7 @@ void glRemix::glRemixRenderer::render()
 
         XMMATRIX inv_proj = XMMatrixInverse(nullptr, proj);
 
-        RayGenConstantBuffer raygen_cb
-        {
+        RayGenConstantBuffer raygen_cb{
             .dimensions = win_dims,
         };
         XMStoreFloat4x4(&raygen_cb.view_proj, XMMatrixTranspose(proj));
