@@ -73,16 +73,4 @@ struct PendingTexture
     UINT32 max_level = 0;
     std::vector<PendingTextureLevel> levels;
 };
-
-struct DDS
-{
-    uint32_t width;
-    uint32_t height;
-    uint32_t mip_levels;
-    uint32_t array_size;
-    DXGI_FORMAT format;
-    bool is_cubemap;
-    std::vector<uint8_t> pixels;
-};
-
 }  // namespace glRemix

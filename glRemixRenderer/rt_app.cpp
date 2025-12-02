@@ -18,194 +18,102 @@
 
 glRemix::glDriver glRemix::glRemixRenderer::sm_driver;
 
-static bool load_dds_env(const char* path, glRemix::DDS& out)
+void glRemix::glRemixRenderer::create_default_env(ID3D12GraphicsCommandList7* cmd_list)
 {
-    TexMetadata metadata{};
-    ScratchImage image;
+    TextureAndDescriptor texture{};
+    texture.texture.desc = {
+        1, 1, 1, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, D3D12_RESOURCE_DIMENSION_TEXTURE2D, false
+    };
 
-    std::wstring wpath(path, path + strlen(path));
-    HRESULT hr = LoadFromDDSFile(wpath.c_str(), DDS_FLAGS_NONE, &metadata, image);
-    if (FAILED(hr))
-    {
-        OutputDebugStringA("LoadFromDDSFile failed\n");
-        return false;
-    }
+    static const float default_pixel[4] = { 0.f, 0.f, 0.f, 1.f };
 
-    if (metadata.dimension != TEX_DIMENSION_TEXTURE2D)
-    {
-        OutputDebugStringA("Env map: only TEX_DIMENSION_TEXTURE2D supported\n");
-        return false;
-    }
+    THROW_IF_FALSE(m_context.create_texture(texture.texture.desc, D3D12_BARRIER_LAYOUT_COPY_DEST,
+                                            &texture.texture, nullptr, "env_map_fallback"));
 
-    const bool is_cubemap = (metadata.IsCubemap() != 0);
-    if (!is_cubemap && metadata.arraySize != 1)
-    {
-        OutputDebugStringA("Env map: 2D textures must be non-array\n");
-        return false;
-    }
+    m_texture_upload_buffers[get_frame_index()].emplace_back();
+    dx::D3D12Buffer& staging = m_texture_upload_buffers[get_frame_index()].back();
+    m_context.copy_to_texture(cmd_list, default_pixel, &staging, &texture.texture);
 
-    DXGI_FORMAT target_format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    ScratchImage converted;
-    const Image* images = nullptr;
-    size_t imageCount = 0;
-    const TexMetadata* metaPtr = &metadata;
-
-    if (metadata.format != target_format)
-    {
-        hr = Convert(image.GetImages(), image.GetImageCount(), metadata, target_format,
-                     TEX_FILTER_DEFAULT, TEX_THRESHOLD_DEFAULT, converted);
-        if (FAILED(hr))
-        {
-            OutputDebugStringA("Convert to RGBA8 UNORM failed\n");
-            return false;
-        }
-
-        images = converted.GetImages();
-        imageCount = converted.GetImageCount();
-        metaPtr = &converted.GetMetadata();
-    }
-    else
-    {
-        images = image.GetImages();
-        imageCount = image.GetImageCount();
-    }
-
-    const uint32_t width = static_cast<uint32_t>(metaPtr->width);
-    const uint32_t height = static_cast<uint32_t>(metaPtr->height);
-    const uint32_t mipLevels = static_cast<uint32_t>(metaPtr->mipLevels);
-    const uint32_t arraySize = static_cast<uint32_t>(metaPtr->arraySize);
-    const uint32_t bpp = 4;  // RGBA8
-
-    if (imageCount != size_t(arraySize) * mipLevels)
-    {
-        OutputDebugStringA("Env map: unexpected imageCount vs arraySize*mipLevels\n");
-        return false;
-    }
-
-    size_t totalSize = 0;
-    for (uint32_t arraySlice = 0; arraySlice < arraySize; ++arraySlice)
-    {
-        uint32_t w = width;
-        uint32_t h = height;
-        for (uint32_t mip = 0; mip < mipLevels; ++mip)
-        {
-            const uint32_t mipW = std::max(1u, w);
-            const uint32_t mipH = std::max(1u, h);
-
-            totalSize += size_t(mipW) * mipH * bpp;
-
-            w = std::max(1u, w >> 1);
-            h = std::max(1u, h >> 1);
-        }
-    }
-
-    out.width = width;
-    out.height = height;
-    out.mip_levels = mipLevels;
-    out.array_size = arraySize;
-    out.format = target_format;
-    out.is_cubemap = is_cubemap;
-    out.pixels.resize(totalSize);
-
-    size_t dstOffset = 0;
-
-    for (uint32_t arraySlice = 0; arraySlice < arraySize; ++arraySlice)
-    {
-        uint32_t w = width;
-        uint32_t h = height;
-
-        for (uint32_t mip = 0; mip < mipLevels; ++mip)
-        {
-            const uint32_t mipW = std::max(1u, w);
-            const uint32_t mipH = std::max(1u, h);
-
-            const uint32_t imageIndex = arraySlice * mipLevels + mip;
-            const Image* srcImg = &images[imageIndex];
-
-            const uint8_t* srcPixels = srcImg->pixels;
-            const size_t srcRowPitch = srcImg->rowPitch;
-
-            uint8_t* dst = out.pixels.data() + dstOffset;
-            const size_t dstRowPitch = size_t(mipW) * bpp;
-
-            for (uint32_t y = 0; y < mipH; ++y)
-            {
-                memcpy(dst + y * dstRowPitch, srcPixels + y * srcRowPitch, dstRowPitch);
-            }
-
-            dstOffset += dstRowPitch * mipH;
-
-            w = std::max(1u, w >> 1);
-            h = std::max(1u, h >> 1);
-        }
-    }
-
-    return true;
+    m_environment = texture;
+    
+    // does not allocate descriptor of create srv
 }
 
 void glRemix::glRemixRenderer::create_environment_map(ID3D12GraphicsCommandList7* cmd_list,
                                                       const char* path)
 {
-    TextureAndDescriptor texture{};
-    const void* pixels = nullptr;
-    DDS dds{};
+    bool is_cubemap = false;
 
     if (!path)
     {
-        // fallback 1x1 black 2D texture
-        texture.texture.desc = { 1,
-                                 1,
-                                 1,  // depth_or_array_size
-                                 1,  // mip_levels
-                                 DXGI_FORMAT_R8G8B8A8_UNORM,
-                                 D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-                                 false };
-
-        THROW_IF_FALSE(m_context.create_texture(texture.texture.desc, D3D12_BARRIER_LAYOUT_COPY_DEST,
-                                                &texture.texture, nullptr, "env_fallback"));
-
-        static const uint8_t default_pixel[4] = { 0, 0, 0, 255 };
-        pixels = default_pixel;
+        create_default_env(cmd_list);
     }
     else
     {
-        THROW_IF_FALSE(load_dds_env(path, dds));
+        TexMetadata metadata{};
+        ScratchImage image;
 
-        texture.texture.desc = { dds.width,
-                                 dds.height,
-                                 static_cast<UINT16>(dds.array_size),
-                                 static_cast<UINT16>(dds.mip_levels),
-                                 dds.format,
-                                 D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-                                 false };
+        std::wstring wpath(path, path + std::strlen(path));
+        HRESULT hr = LoadFromDDSFile(wpath.c_str(), DDS_FLAGS_NONE, &metadata, image);
 
-        THROW_IF_FALSE(m_context.create_texture(texture.texture.desc, D3D12_BARRIER_LAYOUT_COPY_DEST,
-                                                &texture.texture, nullptr, "env_map"));
+        if (FAILED(hr))
+        {
+            OutputDebugStringA("Env map: Load env from DDS file failed, using fallback\n");
+            create_default_env(cmd_list);
+        }
+        else
+        {
+            is_cubemap = metadata.IsCubemap() != 0;
 
-        pixels = dds.pixels.data();
+            if (!is_cubemap)
+            {
+                OutputDebugStringA("Env map: Expected cubemap DDS, got non-cubemap; using as 2D\n");
+            }
+
+            TextureAndDescriptor texture{};
+
+            const UINT width = static_cast<UINT>(metadata.width);
+            const UINT height = static_cast<UINT>(metadata.height);
+            const UINT16 mips = static_cast<UINT16>(metadata.mipLevels ? metadata.mipLevels : 1);
+            const UINT16 arrays = static_cast<UINT16>(is_cubemap ? metadata.arraySize : 1);
+
+            DXGI_FORMAT format = metadata.format;
+
+            texture.texture.desc = { width, height, arrays,
+                                     mips,  format, D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+                                     false };
+
+            THROW_IF_FALSE(m_context.create_texture(texture.texture.desc,
+                                                    D3D12_BARRIER_LAYOUT_COPY_DEST,
+                                                    &texture.texture, nullptr, "env_map"));
+
+            const void* pixels = image.GetPixels();
+
+            m_texture_upload_buffers[get_frame_index()].emplace_back();
+            dx::D3D12Buffer& staging = m_texture_upload_buffers[get_frame_index()].back();
+            m_context.copy_to_texture(cmd_list, pixels, &staging, &texture.texture);
+
+            m_environment.texture = texture.texture;
+        }
     }
 
-    // Upload
-    m_texture_upload_buffers[get_frame_index()].emplace_back();
-    dx::D3D12Buffer& staging = m_texture_upload_buffers[get_frame_index()].back();
-    m_context.copy_to_texture(cmd_list, pixels, &staging, &texture.texture);
-
-    // Descriptor
-    THROW_IF_FALSE(m_CPU_descriptor_heap.allocate(&texture.descriptor));
-
-    if (path && dds.is_cubemap)
+    if (m_environment.descriptor.offset == dx::CREATE_NEW_DESCRIPTOR)
     {
-        m_context.create_shader_resource_view_texture_cube(texture.texture,
-                                                           texture.texture.desc.format,
-                                                           texture.descriptor);
+        THROW_IF_FALSE(m_CPU_descriptor_heap.allocate(&m_environment.descriptor));
+    }
+
+    if (is_cubemap)
+    {
+        m_context.create_shader_resource_view_texture_cube(m_environment.texture,
+                                                           m_environment.texture.desc.format,
+                                                           m_environment.descriptor);
     }
     else
     {
-        m_context.create_shader_resource_view_texture(texture.texture, texture.texture.desc.format,
-                                                      texture.descriptor);
+        m_context.create_shader_resource_view_texture(m_environment.texture,
+                                                      m_environment.texture.desc.format,
+                                                      m_environment.descriptor);
     }
-
-    m_environment = texture;
 }
 
 void glRemix::glRemixRenderer::create_material_buffer()
@@ -254,6 +162,8 @@ void glRemix::glRemixRenderer::create_mesh_record_buffer()
 
 void glRemix::glRemixRenderer::create()
 {
+    m_create_env = true;
+
     for (UINT i = 0; i < m_frames_in_flight; i++)
     {
         THROW_IF_FALSE(m_context.create_command_allocator(&m_cmd_pools[i], &m_gfx_queue,
@@ -1456,12 +1366,12 @@ void glRemix::glRemixRenderer::render()
     build_tlas(cmd_list.Get());
 
     // build environment map
-    if (m_environment.descriptor.offset == dx::CREATE_NEW_DESCRIPTOR)
+    if (m_create_env)
     {
-        create_environment_map(
-            cmd_list.Get(),
-            "C:\\Users\\bryce\\OneDrive\\Desktop\\skyfire_skybox.dds");  // path to your texture
+        create_environment_map(cmd_list.Get(), m_env_path);
+        m_create_env = false;
     }
+
 
     // Dispatch rays to UAV render target
     if (!state.m_meshes.empty())

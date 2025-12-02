@@ -138,6 +138,7 @@ void calculate_triangle_surface_differential(
     }
 }
 
+// adapted from yining karl li and pbrt (https://blog.yiningkarlli.com/2018/10/bidirectional-mipmap.html#2018-10-25-mipmap-level-selection-and-ray-differentials)
 float4 calculate_screen_space_differential(
     float3 p,
     float3 n,

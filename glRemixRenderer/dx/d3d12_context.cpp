@@ -547,9 +547,7 @@ bool D3D12Context::copy_to_texture(ID3D12GraphicsCommandList7* cmd_list, const v
                                    D3D12Buffer* const staging, D3D12Texture* const texture)
 {
     // We don't support multi plane formats so just mips * array/depth
-    const UINT32 arraySize = texture->desc.depth_or_array_size;
-    const UINT32 mipLevels = texture->desc.mip_levels;
-    const UINT32 num_subresources = mipLevels * arraySize;
+    const UINT32 num_subresources = texture->desc.mip_levels * texture->desc.depth_or_array_size;
 
     constexpr UINT max_subresources = 12;
     assert(num_subresources < max_subresources);
@@ -576,31 +574,46 @@ bool D3D12Context::copy_to_texture(ID3D12GraphicsCommandList7* cmd_list, const v
 
     const UINT bpp = BitsPerPixel(texture->desc.format) / 8;
     UINT64 offset = 0;
-    for (UINT arraySlice = 0; arraySlice < arraySize; ++arraySlice)
+    for (UINT subresource = 0; subresource < num_subresources; subresource++)
     {
-        for (UINT mip = 0; mip < mipLevels; ++mip)
+        const auto mip = subresource % texture->desc.mip_levels;
+
+        const auto mip_width = std::max(1u, texture->desc.width >> mip);
+        const auto mip_height = std::max(1u, texture->desc.height >> mip);
+        const auto mip_depth = std::max<UINT>(1u, texture->desc.depth_or_array_size >> mip);
+
+        const auto bytes_per_row = mip_width * bpp;
+
+        const auto& footprint = layouts[subresource];
+        const auto row_pitch = footprint.Footprint.RowPitch;
+        const auto slice_pitch = row_pitch * footprint.Footprint.Height;
+
+        UINT8* dst = &upload_ptr[footprint.Offset];
+
+        const UINT8* src = static_cast<const UINT8*>(data) + offset;
+
+        if (desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D)
         {
-            const UINT subresource = mip + arraySlice * mipLevels;
+            for (UINT z = 0; z < mip_depth; z++)
+            {
+                UINT8* dst_slice = &dst[z * slice_pitch];
+                const UINT8* src_slice = &src[z * mip_height * bytes_per_row];
 
-            const UINT mip_width = std::max(1u, texture->desc.width >> mip);
-            const UINT mip_height = std::max(1u, texture->desc.height >> mip);
-
-            const UINT bytes_per_row = mip_width * bpp;
-
-            const auto& footprint = layouts[subresource];
-            const UINT row_pitch = footprint.Footprint.RowPitch;
-            const UINT slice_pitch = row_pitch * footprint.Footprint.Height;
-
-            UINT8* dst = upload_ptr + footprint.Offset;
-            const UINT8* src = static_cast<const UINT8*>(data) + offset;
-
-            for (UINT y = 0; y < mip_height; ++y)
+                for (UINT y = 0; y < mip_height; y++)
+                {
+                    memcpy(&dst_slice[y * row_pitch], &src_slice[y * bytes_per_row], bytes_per_row);
+                }
+            }
+        }
+        else
+        {
+            for (UINT y = 0; y < mip_height; y++)
             {
                 memcpy(&dst[y * row_pitch], &src[y * bytes_per_row], bytes_per_row);
             }
-
-            offset += UINT64(bytes_per_row) * mip_height;
         }
+
+        offset += bytes_per_row * mip_height;
     }
 
     unmap_buffer(staging);
