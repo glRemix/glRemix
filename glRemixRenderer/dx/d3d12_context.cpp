@@ -582,7 +582,11 @@ bool D3D12Context::copy_to_texture(ID3D12GraphicsCommandList7* cmd_list, const v
 
         const auto mip_width = std::max(1u, texture->desc.width >> mip);
         const auto mip_height = std::max(1u, texture->desc.height >> mip);
-        const auto mip_depth = std::max<UINT>(1u, texture->desc.depth_or_array_size >> mip);
+        // For 3D textures, depth varies per mip. For arrays/cubemaps, always 1 (one 2D slice per
+        // subresource)
+        const auto mip_depth = desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D
+                                   ? std::max<UINT>(1u, texture->desc.depth_or_array_size >> mip)
+                                   : 1u;
 
         const auto bytes_per_row = mip_width * bpp;
 
@@ -605,7 +609,7 @@ bool D3D12Context::copy_to_texture(ID3D12GraphicsCommandList7* cmd_list, const v
             }
         }
 
-        offset += bytes_per_row * mip_height;
+        offset += bytes_per_row * mip_height * mip_depth;
     }
 
     unmap_buffer(staging);
