@@ -671,7 +671,8 @@ void glRemix::glRemixRenderer::create_pending_textures(ID3D12GraphicsCommandList
 
     for (auto& kv : state.m_pending_textures)
     {
-        PendingTexture& pending = const_cast<PendingTexture&>(kv.second); // TODO fix this constness error
+        PendingTexture& pending = const_cast<PendingTexture&>(
+            kv.second);  // TODO fix this constness error
 
         UINT32 mipLevels = pending.max_level + 1;
         pending.desc.mip_levels = mipLevels;
@@ -747,7 +748,6 @@ void glRemix::glRemixRenderer::create_pending_textures(ID3D12GraphicsCommandList
             w = std::max(1u, w >> 1);
             h = std::max(1u, h >> 1);
         }
-
 
         m_texture_upload_buffers[get_frame_index()].emplace_back();
         dx::D3D12Buffer& staging = m_texture_upload_buffers[get_frame_index()].back();

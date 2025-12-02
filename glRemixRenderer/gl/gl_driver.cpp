@@ -537,12 +537,11 @@ static void handle_tex_image_2d(const GLCommandContext& ctx, const void* data)
     if (tex.levels.empty())
     {
         tex.desc = {
-            width,
-            height,
-            1,       // depth_or_array_size
-            1,       // mip_levels
-            fmt,    D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-            false   // not render target
+            width, height,
+            1,     // depth_or_array_size
+            1,     // mip_levels
+            fmt,   D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+            false  // not render target
         };
     }
 
@@ -559,7 +558,7 @@ static void handle_tex_image_2d(const GLCommandContext& ctx, const void* data)
     const bool to_rgba = (cmd->format == GL_RGB) && (cmd->type == GL_UNSIGNED_BYTE);
 
     const size_t pixel_count = size_t(width) * size_t(height);
-    const size_t dst_bpp = 4; // TODO add additional cases (currently just RGBA)
+    const size_t dst_bpp = 4;  // TODO add additional cases (currently just RGBA)
 
     lvl.pixels.resize(pixel_count * dst_bpp);
 
@@ -581,7 +580,7 @@ static void handle_tex_image_2d(const GLCommandContext& ctx, const void* data)
     }
     else
     {
-        const size_t src_bpp = dst_bpp; // TODO add additional cases
+        const size_t src_bpp = dst_bpp;  // TODO add additional cases
         const auto* src = static_cast<const UINT8*>(data_ptr);
         auto* dst = lvl.pixels.data();
         memcpy(dst, src, pixel_count * src_bpp);
