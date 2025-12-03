@@ -95,13 +95,15 @@ enum class GLCommandType : UINT32
              // of enum elements)
 };
 
+constexpr UINT32 k_MAX_TEXTURE_UNITS = 2;
+
 enum class GLRemixClientArrayType : UINT32
 {
     VERTEX,     // GL_VERTEX_ARRAY
     NORMAL,     // GL_NORMAL_ARRAY
     COLOR,      // GL_COLOR_ARRAY
-    TEXCOORD0,  // GL_TEXCOORD_ARRAY (default)
-    TEXCOORD1,  // GL_TEXCOORD_ARRAY
+    TEXCOORD0,  // GL_TEXCOORD_ARRAY
+    TEXCOORD1,  // GL_MULTITEXTURE_ARB
     COLORIDX,   // GL_INDEX_ARRAY
     EDGEFLAG,   // GL_EDGEFLAG_ARRAY
     INDICES,    // `indices` passed in `glDrawElements`

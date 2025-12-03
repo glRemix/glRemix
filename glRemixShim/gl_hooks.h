@@ -41,8 +41,6 @@ constexpr char k_EXTENSIONS[] =
     "";
 #undef GLREMIX_EXT
 
-constexpr UINT32 k_MAX_TEXTURE_UNITS = 2;
-
 extern UINT32 g_gen_lists_count;      // monotonic int, passed back to host app in `glGenLists`
 extern UINT32 g_gen_textures_count;   // monotonic int, passed back in `glGenTextures`
 

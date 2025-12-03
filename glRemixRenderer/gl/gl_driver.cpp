@@ -743,14 +743,10 @@ static void handle_draw_arrays(const GLCommandContext& ctx, const void* data)
                     state.t_vertices[v_idx].color = XMFLOAT4{ f_ptr[0], f_ptr[1], f_ptr[2],
                                                               h.size > 3 ? f_ptr[3] : 1.0f };
                     break;
-
-                // TODO (Renderer Team)
                 case GLRemixClientArrayType::TEXCOORD0:
                     state.t_vertices[v_idx].uv = XMFLOAT2{ f_ptr[0], h.size > 1 ? f_ptr[1] : 0.0f };
                     break;
-                case GLRemixClientArrayType::TEXCOORD1:
-                    state.t_vertices[v_idx].uv = XMFLOAT2{ f_ptr[0], h.size > 1 ? f_ptr[1] : 0.0f };
-                    break;
+                case GLRemixClientArrayType::TEXCOORD1: break;  // TODO (Renderer Team)
 
                 default: break;
             }
@@ -820,13 +816,10 @@ static void handle_draw_elements(const GLCommandContext& ctx, const void* data)
                     state.t_vertices[v_idx].color = XMFLOAT4{ f_ptr[0], f_ptr[1], f_ptr[2],
                                                               h.size > 3 ? f_ptr[3] : 1.0f };
                     break;
-                // TODO (Renderer Team)
                 case GLRemixClientArrayType::TEXCOORD0:
                     state.t_vertices[v_idx].uv = XMFLOAT2{ f_ptr[0], h.size > 1 ? f_ptr[1] : 0.0f };
                     break;
-                case GLRemixClientArrayType::TEXCOORD1:
-                    state.t_vertices[v_idx].uv = XMFLOAT2{ f_ptr[0], h.size > 1 ? f_ptr[1] : 0.0f };
-                    break;
+                case GLRemixClientArrayType::TEXCOORD1: break;  // TODO (Renderer Team)
 
                 default: break;
             }

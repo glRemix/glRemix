@@ -22,8 +22,10 @@ void APIENTRY gl_get_integerv_ovr(GLenum pname, GLint* data)
     {
         case GL_MAX_TEXTURE_SIZE: *data = 4096; return;
         case GL_MAX_TEXTURE_UNITS_ARB: *data = k_MAX_TEXTURE_UNITS; return;
-        case GL_ACTIVE_TEXTURE_ARB: *data = g_active_texture_unit; return;
-        case GL_CLIENT_ACTIVE_TEXTURE_ARB: *data = g_client_active_texcoord_unit; return;
+        case GL_ACTIVE_TEXTURE_ARB: *data = GL_TEXTURE0_ARB + g_active_texture_unit; return;
+        case GL_CLIENT_ACTIVE_TEXTURE_ARB:
+            *data = GL_TEXTURE0_ARB + g_client_active_texcoord_unit;
+            return;
         case GL_TEXTURE_BINDING_2D:
             *data = g_texture_units[g_active_texture_unit].binding_2d;
             return;

@@ -17,3 +17,9 @@
 extern "C" WINUSERAPI int WINAPI MessageBoxTimeoutW(IN HWND hWnd, IN PCWSTR lpText,
                                                     IN PCWSTR lpCaption, IN UINT uType,
                                                     IN WORD wLanguageId, IN DWORD dwMilliseconds);
+
+#ifdef _DEBUG
+#define HANDLE_LOGIC_ERROR(msg) throw std::logic_error(msg)
+#else
+#define HANDLE_LOGIC_ERROR(msg) DBG_PRINT("%s", msg)
+#endif
