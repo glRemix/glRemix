@@ -5,7 +5,6 @@
 
 #include "gl_state.h"
 
-#include <vector>
 #include <array>
 
 namespace glRemix

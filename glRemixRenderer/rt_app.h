@@ -18,6 +18,7 @@
 #include <shared/containers/free_list_vector.h>
 
 #include <filesystem>
+#include <mutex>
 
 #include "gl/gl_driver.h"
 
@@ -72,6 +73,10 @@ class glRemixRenderer : public Application
     // Textures
     std::array<std::vector<dx::D3D12Buffer>, m_frames_in_flight> m_texture_upload_buffers;
     FreeListVector<TextureAndDescriptor> m_textures;
+    tsl::robin_map<UINT32, TextureAndDescriptor> m_texture_map;
+    TextureAndDescriptor m_environment;
+    std::once_flag m_create_env_once{};
+    const char* m_env_path = nullptr;
 
     // Materials per buffer
     // TODO: Make this a macro instead?
@@ -100,6 +105,7 @@ class glRemixRenderer : public Application
                                ID3D12GraphicsCommandList7* cmd_list);
     void create_pending_buffers(ID3D12GraphicsCommandList7* cmd_list);
     void create_pending_textures(ID3D12GraphicsCommandList7* cmd_list);
+    void create_environment_map(ID3D12GraphicsCommandList7* cmd_list, const char* path);
     void build_tlas(ID3D12GraphicsCommandList7* cmd_list);
 
 protected:
