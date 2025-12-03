@@ -26,6 +26,11 @@ void DebugWindow::render()
                 render_mesh_ids();
                 ImGui::EndTabItem();
             }
+            if (ImGui::BeginTabItem("Toggle Mesh Visibility"))
+            {
+                render_mesh_visibility();
+                ImGui::EndTabItem();
+            }
             if (ImGui::BeginTabItem("Debug Log"))
             {
                 render_debug_log();
@@ -38,9 +43,11 @@ void DebugWindow::render()
 }
 
 // get mesh buffer from rt_app
-void DebugWindow::set_mesh_buffer(std::vector<MeshRecord>& meshes)
+void DebugWindow::set_mesh_buffer(std::vector<MeshRecord>& meshes,
+                                  tsl::robin_map<UINT64, MeshRecord>& mesh_map)
 {
     m_meshes = &meshes;
+    m_mesh_map = &mesh_map;
 }
 
 // get replace_mesh function from rt_app
@@ -57,9 +64,10 @@ void DebugWindow::render_mesh_ids()
     // render meshIDs and get selected mesh
     if (ImGui::BeginListBox("##assets"))
     {
-        for (int i = 0; i < m_meshes->size(); i++)
+        for (auto it = m_mesh_map->begin(); it != m_mesh_map->end();)
         {
-            const auto mesh_id = (*m_meshes)[i].mesh_id;
+            auto mesh_id = it->first;
+            auto& mesh = it->second;
 
             const bool is_selected = (m_mesh_ID_to_replace == mesh_id);
             char buf[64];
@@ -68,6 +76,8 @@ void DebugWindow::render_mesh_ids()
             {
                 m_mesh_ID_to_replace = mesh_id;
             }
+
+            ++it;
         }
         ImGui::EndListBox();
     }
@@ -89,6 +99,27 @@ void DebugWindow::render_mesh_ids()
                 m_replace_mesh_callback(m_mesh_ID_to_replace, m_asset_path_buffer);
             }
         }
+    }
+}
+
+void DebugWindow::render_mesh_visibility()
+{
+    ImGui::Text("Toggle Mesh Visibility ");
+    if (ImGui::BeginListBox("##mesh_visibility"))
+    {
+        for (auto it = m_mesh_map->begin(); it != m_mesh_map->end();)
+        {
+            auto mesh_id = it->first;
+            auto& mesh = it->second;
+            ImGui::PushID((void*)(uintptr_t)mesh_id);
+            bool& visible = m_mesh_map->at(mesh_id).visible;
+            char buf[64];
+            snprintf(buf, 64, "Mesh ID: %llu", mesh_id);
+            ImGui::Checkbox(buf, &visible);
+            ImGui::PopID();
+            ++it;
+        }
+        ImGui::EndListBox();
     }
 }
 
