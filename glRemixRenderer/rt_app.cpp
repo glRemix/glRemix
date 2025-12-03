@@ -1,7 +1,6 @@
 #include "rt_app.h"
 #include "mesh_loader.h"
 
-#include <thread>
 #include <chrono>
 #include <vector>
 #include <filesystem>
@@ -819,12 +818,12 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
 
     UINT32 old_mesh_mv_idx = -1;
     UINT32 old_mesh_mat_idx = -1;
-    std::array<float, 3> old_min_bb = { 1000.0, 1000.0, 1000.0 };
-    std::array<float, 3> old_max_bb = { -1000.0, -1000.0, -1000.0 };
+    std::array old_min_bb = { 1000.0f, 1000.0f, 1000.0f };
+    std::array old_max_bb = { -1000.0f, -1000.0f, -1000.0f };
     UINT32 removed_index = -1;
 
-    XMFLOAT3 min_bb = { 1000.0, 1000.0, 1000.0 };
-    XMFLOAT3 max_bb = { -1000.0, -1000.0, -1000.0 };
+    XMFLOAT3 min_bb = { 1000.0f, 1000.0f, 1000.0f };
+    XMFLOAT3 max_bb = { -1000.0f, -1000.0f, -1000.0f };
 
     // erase mesh that needs to be replaced
     for (auto it = state.m_mesh_map.begin(); it != state.m_mesh_map.end();)
@@ -875,13 +874,13 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
                                                 new_materials, min_bb, max_bb));
 
     // get value to scale imported mesh vertices
-    std::array<float, 3> old_bb_size = { old_max_bb[0] - old_min_bb[0],
+    std::array old_bb_size = { old_max_bb[0] - old_min_bb[0],
                                          old_max_bb[1] - old_min_bb[1],
                                          old_max_bb[2] - old_min_bb[2] };
-    std::array<float, 3> new_bb_size = { max_bb.x - min_bb.x, max_bb.y - min_bb.y,
+    std::array new_bb_size = { max_bb.x - min_bb.x, max_bb.y - min_bb.y,
                                          max_bb.z - min_bb.z };
 
-    std::array<float, 3> scale_factors = { 1.0f, 1.0f, 1.0f };
+    std::array scale_factors = { 1.0f, 1.0f, 1.0f };
     for (int i = 0; i < 3; ++i)
     {
         if (new_bb_size[i] > 0.0f)
