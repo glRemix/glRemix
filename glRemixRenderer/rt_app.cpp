@@ -1129,8 +1129,7 @@ void glRemix::glRemixRenderer::render()
         THROW_IF_FALSE(m_context.map_buffer(&mat_buffer.buffer, &mat_ptr));
         const auto start_idx = i * MATERIALS_PER_BUFFER;
         assert(!u64_overflows_u32(state.m_materials.size()));
-        const auto end_idx = std::min(start_idx + MATERIALS_PER_BUFFER,
-                                      state.m_materials.size());
+        const auto end_idx = std::min(start_idx + MATERIALS_PER_BUFFER, state.m_materials.size());
         const auto mat_count = end_idx - start_idx;
         memcpy(mat_ptr, state.m_materials.data() + start_idx, sizeof(Material) * mat_count);
         m_context.unmap_buffer(&mat_buffer.buffer);
@@ -1178,10 +1177,21 @@ void glRemix::glRemixRenderer::render()
     cmd_list->RSSetScissorRects(1, &scissor_rect);
 
     m_context.start_imgui_frame();
+    {
+        DebugWindow::MeshStats mesh_stats{
+            .num_meshes = m_mesh_resources.size() - m_mesh_resources.freed_size(),
+            .num_textures = m_texture_map.size(),
+        };
+        m_debug_window.set_mesh_stats(mesh_stats);
+    }
+    {
+        DebugWindow::DebugInfo debug_info{
+            // This only displays the current frames meshes
+            .mesh_records = { .records = state.m_meshes.data(), .count = state.m_meshes.size() }
+        };
 
-    // render imgui
-    m_debug_window.set_mesh_buffer(state.m_meshes);
-    m_debug_window.render();
+        m_debug_window.render(debug_info);
+    }
 
     // Build all pending buffers from geometry collected in read_gl_command_stream
     create_pending_buffers(cmd_list.Get());
