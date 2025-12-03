@@ -1121,29 +1121,21 @@ void glRemix::glRemixRenderer::render()
         create_material_buffer();
     }
 
-    // Update material buffers every frame
-    // We iterate through buffers because we assume that materials does not shrink ever
-    for (UINT i = 0; i < m_material_buffers.size(); i++)
-    {
-        // TODO: Update material texture indices
-        // This will be tough since we don't want to do it in place
-        // Perhaps just add separate members for global index
+    const auto num_buffers_to_update = ceil_div(state.m_materials.size(), MATERIALS_PER_BUFFER);
 
+    // Update material buffers every frame
+    for (UINT64 i = 0; i < num_buffers_to_update; i++)
+    {
         const auto& mat_buffer = m_material_buffers[i][get_frame_index()];
         void* mat_ptr;
         THROW_IF_FALSE(m_context.map_buffer(&mat_buffer.buffer, &mat_ptr));
         const auto start_idx = i * MATERIALS_PER_BUFFER;
         assert(!u64_overflows_u32(state.m_materials.size()));
         const auto end_idx = std::min(start_idx + MATERIALS_PER_BUFFER,
-                                      static_cast<UINT>(state.m_materials.size()));
+                                      state.m_materials.size());
         const auto mat_count = end_idx - start_idx;
         memcpy(mat_ptr, state.m_materials.data() + start_idx, sizeof(Material) * mat_count);
         m_context.unmap_buffer(&mat_buffer.buffer);
-    }
-
-    while (state.m_meshes.size() > m_gpu_meshrecord_buffers.size() * MESHRECORDS_PER_BUFFER)
-    {
-        create_mesh_record_buffer();
     }
 
     // Update light buffer
@@ -1206,6 +1198,13 @@ void glRemix::glRemixRenderer::render()
 
     // replace meshes in m_meshes if applicable
     handle_per_frame_replacement();
+
+    // Mesh records get added in create_pending_buffers so this needs to happen after that
+    while (state.m_meshes.size() > m_gpu_meshrecord_buffers.size() * MESHRECORDS_PER_BUFFER)
+    {
+        create_mesh_record_buffer();
+    }
+
     // Currently reserve TLAS, 1 UAV RT, 1 ENV SRV, 2 CBV
     constexpr auto reserved_descriptor_offset = 5;
     // Update mesh records vector with global indices based off current paging status
@@ -1260,7 +1259,9 @@ void glRemix::glRemixRenderer::render()
     }
 
     // Copy the processed GPU mesh records to the GPU buffers
-    for (UINT i = 0; i < m_gpu_meshrecord_buffers.size(); i++)
+    const auto gpu_meshrecord_buffers_to_update = ceil_div(gpu_mesh_records_to_copy.size(),
+                                                           MESHRECORDS_PER_BUFFER);
+    for (UINT64 i = 0; i < gpu_meshrecord_buffers_to_update; i++)
     {
         const auto& mesh_record_buffer = m_gpu_meshrecord_buffers[i][get_frame_index()];
         void* mesh_record_ptr;
@@ -1268,7 +1269,7 @@ void glRemix::glRemixRenderer::render()
         const auto start_idx = i * MESHRECORDS_PER_BUFFER;
         assert(!u64_overflows_u32(gpu_mesh_records_to_copy.size()));
         const auto end_idx = std::min(start_idx + MESHRECORDS_PER_BUFFER,
-                                      static_cast<UINT>(gpu_mesh_records_to_copy.size()));
+                                      gpu_mesh_records_to_copy.size());
         const auto mesh_record_count = end_idx - start_idx;
         memcpy(mesh_record_ptr, gpu_mesh_records_to_copy.data() + start_idx,
                sizeof(GPUMeshRecord) * mesh_record_count);
