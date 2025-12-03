@@ -10,7 +10,38 @@ LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARA
 
 namespace glRemix
 {
-static void hash_and_commit_geometry(glState& state, const size_t* client_indices = nullptr)
+UINT64 compute_mesh_hash(const std::vector<Vertex>& vertices, const std::vector<UINT32>& indices)
+{
+    size_t seed = 0;
+    auto hash_combine = [&seed](auto const& v)
+    {
+        seed ^= std::hash<std::decay_t<decltype(v)>>{}(v) + 0x9e3779b97f4a7c15ULL + (seed << 6)
+                + (seed >> 2);
+    };
+
+    auto quantize = [](const float v, const float precision = 1e-5f) -> float
+    { return std::round(v / precision) * precision; };
+
+    for (int i = 0; i < vertices.size(); ++i)
+    {
+        const Vertex& vertex = vertices[i];
+        hash_combine(quantize(vertex.position.x));
+        hash_combine(quantize(vertex.position.y));
+        hash_combine(quantize(vertex.position.z));
+        hash_combine(quantize(vertex.color.x));
+        hash_combine(quantize(vertex.color.y));
+        hash_combine(quantize(vertex.color.z));
+    }
+
+    for (int i = 0; i < indices.size(); ++i)
+    {
+        hash_combine(indices[i]);
+    }
+
+    return seed;
+}
+
+static void hash_and_commit_geometry(glState& state)
 {
     if (!state.m_perspective || state.t_indices.empty())
     {
@@ -20,32 +51,13 @@ static void hash_and_commit_geometry(glState& state, const size_t* client_indice
     }
 
     // bounding box variables
-    XMFLOAT3 min_bb = { 100.0, 100.0, 100.0 };
-    XMFLOAT3 max_bb = { -100.0, -100.0, -100.0 };
+    XMFLOAT3 min_bb = { 100.0f, 100.0f, 100.0f };
+    XMFLOAT3 max_bb = { -100.0f, -100.0f, -100.0f };
 
-    // hashing - logic from boost::hash_combine
-    size_t seed = 0;
-    auto hash_combine = [&seed](auto const& v)
-    {
-        seed ^= std::hash<std::decay_t<decltype(v)>>{}(v) + 0x9e3779b97f4a7c15ULL + (seed << 6)
-                + (seed >> 2);
-    };
-
-    // reduces floating point instability
-    auto quantize = [](const float v, const float precision = 1e-5f) -> float
-    { return std::round(v / precision) * precision; };
-
-    // get vertex data to hash
+    // compute bounding box and hash
     for (int i = 0; i < state.t_vertices.size(); ++i)
     {
         const Vertex& vertex = state.t_vertices[i];
-        hash_combine(quantize(vertex.position.x));
-        hash_combine(quantize(vertex.position.y));
-        hash_combine(quantize(vertex.position.z));
-        hash_combine(quantize(vertex.color.x));
-        hash_combine(quantize(vertex.color.y));
-        hash_combine(quantize(vertex.color.z));
-
         // add bounding box info
         XMVECTOR p = XMLoadFloat3(&vertex.position);
         XMVECTOR minv = XMLoadFloat3(&min_bb);
@@ -58,17 +70,7 @@ static void hash_and_commit_geometry(glState& state, const size_t* client_indice
         XMStoreFloat3(&max_bb, maxv);
     }
 
-    bool use_existing = client_indices != nullptr;
-    // get index data to hash
-    for (int i = 0; i < state.t_indices.size(); ++i)
-    {
-        const uint32_t& index = use_existing ? client_indices[state.t_indices[i]]
-                                             : state.t_indices[i];
-        hash_combine(index);
-    }
-
-    // check if hash exists
-    uint64_t hash = seed;
+    auto hash = compute_mesh_hash(state.t_vertices, state.t_indices);
 
     MeshRecord* mesh;
     if (state.m_mesh_map.contains(hash))
@@ -831,7 +833,7 @@ static void handle_draw_elements(const GLCommandContext& ctx, const void* data)
 
     triangulate(state);
 
-    hash_and_commit_geometry(state, client_indices.data());
+    hash_and_commit_geometry(state);
 }
 
 // MATRIX OPERATIONS

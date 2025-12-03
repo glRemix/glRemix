@@ -788,43 +788,6 @@ static D3D12_RAYTRACING_INSTANCE_DESC mv_to_instance_desc(const XMFLOAT4X4& mv)
     return desc;
 }
 
-UINT64 glRemix::glRemixRenderer::create_hash(std::vector<Vertex> vertices,
-                                             std::vector<UINT32> indices)
-{
-    // hashing - logic from boost::hash_combine
-    size_t seed = 0;
-    auto hash_combine = [&seed](auto const& v)
-    {
-        seed ^= std::hash<std::decay_t<decltype(v)>>{}(v) + 0x9e3779b97f4a7c15ULL + (seed << 6)
-                + (seed >> 2);
-    };
-
-    // reduces floating point instability
-    auto quantize = [](float v, float precision = 1e-5f) -> float
-    { return std::round(v / precision) * precision; };
-
-    // get vertex data to hash
-    for (int i = 0; i < vertices.size(); ++i)
-    {
-        const Vertex& vertex = vertices[i];
-        hash_combine(quantize(vertex.position.x));
-        hash_combine(quantize(vertex.position.y));
-        hash_combine(quantize(vertex.position.z));
-        hash_combine(quantize(vertex.color.x));
-        hash_combine(quantize(vertex.color.y));
-        hash_combine(quantize(vertex.color.z));
-    }
-
-    // get index data to hash
-    for (int i = 0; i < indices.size(); ++i)
-    {
-        const UINT32& index = indices[i];
-        hash_combine(index);
-    }
-
-    return seed;
-}
-
 void glRemix::glRemixRenderer::handle_per_frame_replacement()
 {
     glState& state = sm_driver.get_state();
@@ -931,7 +894,7 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
     transform_replacement_vertices(new_vertices, scale_factors);
 
     // put new mesh into pending geometries
-    UINT64 new_mesh_hash = create_hash(new_vertices, new_indices);
+    UINT64 new_mesh_hash = compute_mesh_hash(new_vertices, new_indices);
     MeshRecord new_mesh;
 
     PendingGeometry pending;
