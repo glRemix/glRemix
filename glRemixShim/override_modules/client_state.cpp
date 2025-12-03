@@ -12,7 +12,7 @@ void APIENTRY gl_enable_client_state_ovr(GLenum array)
 {
     GLRemixClientArrayInterface* target = nullptr;
 
-    GLRemixClientArrayType array_type = utils::MapTo(array);
+    GLRemixClientArrayType array_type = utils::MapTo(array, g_client_active_texcoord_unit);
     if (array_type == GLRemixClientArrayType::_INVALID)
     {
         return;
@@ -33,7 +33,7 @@ void APIENTRY gl_disable_client_state_ovr(GLenum array)
 {
     GLRemixClientArrayInterface* target = nullptr;
 
-    GLRemixClientArrayType array_type = utils::MapTo(array);
+    GLRemixClientArrayType array_type = utils::MapTo(array, g_client_active_texcoord_unit);
     if (array_type == GLRemixClientArrayType::_INVALID)
     {
         return;
@@ -91,9 +91,11 @@ void APIENTRY gl_color_pointer_ovr(GLint size, GLenum type, GLsizei stride, cons
 
 void APIENTRY gl_tex_coord_pointer_ovr(GLint size, GLenum type, GLsizei stride, const void* pointer)
 {
-    GLRemixClientArrayType array_type = GLRemixClientArrayType::TEXCOORD;
+    GLRemixClientArrayType array_type = static_cast<GLRemixClientArrayType>(
+        static_cast<UINT32>(GLRemixClientArrayType::TEXCOORD0) + g_client_active_texcoord_unit);
 
     GLRemixClientArrayInterface& a = g_client_arrays[static_cast<UINT32>(array_type)];
+
     a.ipc_payload.size = static_cast<UINT32>(size);
     a.ipc_payload.type = static_cast<UINT32>(type);
     a.ipc_payload.stride = utils::InterpretStride(size, type, stride);
@@ -102,27 +104,27 @@ void APIENTRY gl_tex_coord_pointer_ovr(GLint size, GLenum type, GLsizei stride, 
     return;
 }
 
-void APIENTRY gl_index_pointer_ovr(GLint size, GLenum type, GLsizei stride, const void* pointer)
+void APIENTRY gl_index_pointer_ovr(GLenum type, GLsizei stride, const void* pointer)
 {
     GLRemixClientArrayType array_type = GLRemixClientArrayType::COLORIDX;
 
     GLRemixClientArrayInterface& a = g_client_arrays[static_cast<UINT32>(array_type)];
-    a.ipc_payload.size = static_cast<UINT32>(size);
+    a.ipc_payload.size = 1;
     a.ipc_payload.type = static_cast<UINT32>(type);
-    a.ipc_payload.stride = utils::InterpretStride(size, type, stride);
+    a.ipc_payload.stride = utils::InterpretStride(1, type, stride);
     a.ipc_payload.array_type = array_type;
     a.ptr = pointer;
     return;
 }
 
-void APIENTRY gl_edge_flag_pointer_ovr(GLint size, GLenum type, GLsizei stride, const void* pointer)
+void APIENTRY gl_edge_flag_pointer_ovr(GLsizei stride, const void* pointer)
 {
     GLRemixClientArrayType array_type = GLRemixClientArrayType::EDGEFLAG;
 
     GLRemixClientArrayInterface& a = g_client_arrays[static_cast<UINT32>(array_type)];
-    a.ipc_payload.size = static_cast<UINT32>(size);
-    a.ipc_payload.type = static_cast<UINT32>(type);
-    a.ipc_payload.stride = utils::InterpretStride(size, type, stride);
+    a.ipc_payload.size = 1;
+    a.ipc_payload.type = static_cast<UINT32>(GL_UNSIGNED_BYTE);
+    a.ipc_payload.stride = utils::InterpretStride(1, GL_UNSIGNED_BYTE, stride);
     a.ipc_payload.array_type = array_type;
     a.ptr = pointer;
     return;

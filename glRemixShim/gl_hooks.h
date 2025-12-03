@@ -29,10 +29,8 @@ struct GLRemixClientArrayInterface
 
 struct GLRemixTextureUnitInterface
 {
-    UINT32 binding_1d = 0;
-    UINT32 binding_2d = 0;
-    UINT32 texture_matrix_mode = 0;
-    float texture_matrix[16] = { 0.0f };
+    UINT32 binding_2d = 0;               // what texture is currently bound to GL_TEXTURE_2D
+    float texcoord[2] = { 0.0f, 0.0f };  // last glMultiTexCoord2fARB/glMultiTexCoord2fvARB value
 };
 
 #ifndef GLREMIX_EXT
@@ -43,13 +41,13 @@ constexpr char k_EXTENSIONS[] =
     "";
 #undef GLREMIX_EXT
 
-constexpr UINT32 k_MAX_TEXTURE_UNITS = 3;
+constexpr UINT32 k_MAX_TEXTURE_UNITS = 2;
 
-extern UINT32 g_active_texture_unit;          // active texture unit for server-side texture state
+extern UINT32 g_gen_lists_count;      // monotonic int, passed back to host app in `glGenLists`
+extern UINT32 g_gen_textures_count;   // monotonic int, passed back in `glGenTextures`
+
+extern UINT32 g_active_texture_unit;  // active texture unit for server-side texture state
 extern UINT32 g_client_active_texcoord_unit;  // active texture unit for client-side texcoord arrays
-
-extern UINT32 g_gen_lists_count;     // monotonic int, passed back to host app in `glGenLists`
-extern UINT32 g_gen_textures_count;  // monotonic int, passed back in `glGenTextures`
 
 extern GLRemixTextureUnitInterface g_texture_units[];
 
