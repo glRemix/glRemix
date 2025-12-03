@@ -115,6 +115,35 @@ void DebugWindow::render_settings()
         ImGui::PopTextWrapPos();
         ImGui::EndTooltip();
     }
+
+    ImGui::Checkbox("Mirror Mode", &m_parameters.mirror_mode);
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+    {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+        ImGui::TextUnformatted("Transform random materials into perfectly specular materials");
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+
+    ImGui::BeginDisabled(!m_parameters.mirror_mode);
+    ImGui::Indent();
+    ImGui::SetNextItemWidth(200.0f);
+    ImGui::SliderFloat("##p", &m_parameters.mirror_threshold, 0.0f, 1.0f, "%.2f");
+    ImGui::Unindent();
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+    {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+        ImGui::TextUnformatted("Proportion of materials to become mirrors");
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+    ImGui::EndDisabled();
     // TODO: Reload environment map, shaders, etc
 }
 

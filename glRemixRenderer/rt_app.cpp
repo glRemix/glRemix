@@ -1300,6 +1300,8 @@ void glRemix::glRemixRenderer::render()
 
         RayGenConstantBuffer raygen_cb{
             .dimensions = win_dims,
+            .mirror_mode = m_debug_window.m_parameters.mirror_mode,
+            .mirror_threshold = m_debug_window.m_parameters.mirror_threshold,
         };
         XMStoreFloat4x4(&raygen_cb.view_proj, XMMatrixTranspose(proj));
         XMStoreFloat4x4(&raygen_cb.inv_view_proj, XMMatrixTranspose(inv_proj));

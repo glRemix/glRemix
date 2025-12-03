@@ -23,10 +23,10 @@ SamplerState g_sampler : register(s0);
 typedef BuiltInTriangleIntersectionAttributes TriAttributes;
 
 // helper functions
-float rand(inout uint seed)
+float rand(uint seed)
 {
     seed = 1664525u * seed + 1013904223u;
-    return float(seed & 0x00FFFFFFu) / 16777216.0f;
+    return float(seed & 0x00FFFFFFu) / 16777216.0;
 }
 
 float3 cosine_sample_hemisphere(float2 xi)
@@ -255,13 +255,14 @@ void generate_camera_ray(float2 uv, out float3 origin, out float3 dir)
     dir = normalize(far_world.xyz - near_world.xyz);
 }
 
-[shader("raygeneration")]void RayGenMain()
+[shader("raygeneration")]
+void RayGenMain()
 {
     float2 base_uv = (float2) DispatchRaysIndex() / float2(g_raygen_cb.dimensions);
     uint seed = uint(DispatchRaysIndex().x * 1973 + DispatchRaysIndex().y * 9277 + 891);
     
-    uint max_bounces = 3;
-    int num_samples_per_pixel = 5;
+    const uint max_bounces = 3;
+    const uint num_samples_per_pixel = 5;
     float3 final_color = float3(0, 0, 0);
     
     for (int sample = 0; sample < num_samples_per_pixel; ++sample)
@@ -273,7 +274,7 @@ void generate_camera_ray(float2 uv, out float3 origin, out float3 dir)
         float3 origin, ray_dir;
         generate_camera_ray(jittered_uv, origin, ray_dir);
         
-        float2 pixelSize = float2(1.0f / g_raygen_cb.dimensions.x, 1.0f / g_raygen_cb.dimensions.y);
+        float2 pixelSize = 1.0 / float2(g_raygen_cb.dimensions);
         
         float3 rx_origin, rx_dir;
         float3 ry_origin, ry_dir;
@@ -296,6 +297,7 @@ void generate_camera_ray(float2 uv, out float3 origin, out float3 dir)
             payload.ry_dir = ry_dir;
             
             payload.depth = bounce;
+            payload.is_mirror = false;
             
             RayDesc ray;
             ray.Origin = origin;
@@ -316,18 +318,26 @@ void generate_camera_ray(float2 uv, out float3 origin, out float3 dir)
             float3 albedo = payload.color.rgb;
             float3 hit_pos = payload.hit_pos;
             
-            // direct lighting contribution on first bounce
-            if (bounce == 0)
-            {
-                float3 direct = direct_lighting(hit_pos, N, albedo);
-                sample_color += throughput * direct;
-            }
+            float3 new_dir;
             
-            float2 xi = float2(rand(seed), rand(seed));
-            float3 local_dir = cosine_sample_hemisphere(xi);
-            float3 new_dir = transform_to_world(local_dir, N);
-
-            throughput *= albedo;
+            if (payload.is_mirror)
+            {
+                new_dir = reflect(ray_dir, N);
+                throughput *= lerp(float3(1.0, 1.0, 1.0), albedo, 0.1);
+            }
+            else
+            {
+                if (bounce == 0)
+                {
+                    float3 direct = direct_lighting(hit_pos, N, albedo);
+                    sample_color += throughput * direct;
+                }
+                
+                float2 xi = float2(rand(seed), rand(seed));
+                float3 local_dir = cosine_sample_hemisphere(xi);
+                new_dir = transform_to_world(local_dir, N);
+                throughput *= albedo;
+            }
             
             ray_dir = new_dir;
             origin = payload.hit_pos + ray_dir * 0.001f;
@@ -341,7 +351,8 @@ void generate_camera_ray(float2 uv, out float3 origin, out float3 dir)
     render_target[DispatchRaysIndex().xy] = float4(final_color, 1.0);
 }
 
-[shader("closesthit")]void ClosestHitMain(inout RayPayload payload, in TriAttributes attr)
+[shader("closesthit")]
+void ClosestHitMain(inout RayPayload payload, in TriAttributes attr)
 {
     // Fetch mesh record for this instance; indices are into the global SRV heap
     const GPUMeshRecord mesh = meshes[InstanceID()];
@@ -390,6 +401,12 @@ void generate_camera_ray(float2 uv, out float3 origin, out float3 dir)
             = ResourceDescriptorHeap[NonUniformResourceIndex(mesh.mat_buffer_idx)];
         mat = mat_buf[mesh.mat_idx];
     }
+
+    payload.is_mirror = false;
+    if (g_raygen_cb.mirror_mode)
+    {
+        payload.is_mirror = rand(mesh.mat_idx) > (1.0 - g_raygen_cb.mirror_threshold);
+    }
     
     float3 tex_albedo = float3(1.0, 1.0, 1.0);
     
@@ -398,8 +415,11 @@ void generate_camera_ray(float2 uv, out float3 origin, out float3 dir)
     {
         Texture2D tex = ResourceDescriptorHeap[NonUniformResourceIndex(mesh.tex_idx)];
 
-        uint texWidth, texHeight, texMips;
-        tex.GetDimensions(0, texWidth, texHeight, texMips);
+        uint tex_mips;
+        {
+            uint tex_width, tex_height;
+            tex.GetDimensions(0, tex_width, tex_height, tex_mips);
+        }
 
         float3 p = hit_pos;
         float3 N = normalize(n_world);
@@ -407,13 +427,13 @@ void generate_camera_ray(float2 uv, out float3 origin, out float3 dir)
         if (payload.depth == 0)
         {
             float3 origin = payload.ray_origin;
-            float3 rDirection = payload.ray_dir;
+            float3 r_direction = payload.ray_dir;
 
-            float3 xorigin = payload.rx_origin;
-            float3 rxDirection = payload.rx_dir;
+            float3 x_origin = payload.rx_origin;
+            float3 rx_direction = payload.rx_dir;
 
-            float3 yorigin = payload.ry_origin;
-            float3 ryDirection = payload.ry_dir;
+            float3 y_origin = payload.ry_origin;
+            float3 ry_direction = payload.ry_dir;
 
             float3 p0 = v0.position;
             float3 p1 = v1.position;
@@ -431,9 +451,9 @@ void generate_camera_ray(float2 uv, out float3 origin, out float3 dir)
 
             float4 dUV = calculate_screen_space_differential(
                 p, N,
-                origin, rDirection,
-                xorigin, rxDirection,
-                yorigin, ryDirection,
+                origin, r_direction,
+                x_origin, rx_direction,
+                y_origin, ry_direction,
                 dpdu, dpdv);
 
             float dudx = dUV.x;
@@ -441,7 +461,7 @@ void generate_camera_ray(float2 uv, out float3 origin, out float3 dir)
             float dudy = dUV.z;
             float dvdy = dUV.w;
 
-            float lod = lod_from_surface_differential(dudx, dvdx, dudy, dvdy, texMips);
+            float lod = lod_from_surface_differential(dudx, dvdx, dudy, dvdy, tex_mips);
 
             float4 tex_sample = tex.SampleLevel(g_sampler, uv, lod);
             tex_albedo = tex_sample.rgb;
@@ -452,7 +472,7 @@ void generate_camera_ray(float2 uv, out float3 origin, out float3 dir)
             float dist = RayTCurrent();
             float lod = lod_heuristic(N, V, dist);
 
-            lod = clamp(lod, 0.0f, (float) (texMips - 1u));
+            lod = clamp(lod, 0.0f, (float) (tex_mips - 1u));
 
             float4 tex_sample = tex.SampleLevel(g_sampler, uv, lod);
             tex_albedo = tex_sample.rgb;
@@ -515,7 +535,8 @@ void generate_camera_ray(float2 uv, out float3 origin, out float3 dir)
 }
 
 
-[shader("miss")]void MissMain(inout RayPayload payload)
+[shader("miss")]
+void MissMain(inout RayPayload payload)
 {
     float3 dir = normalize(WorldRayDirection());
     float3 env_color = environment_map.SampleLevel(g_sampler, dir, 0.0f).rgb;

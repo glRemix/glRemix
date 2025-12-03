@@ -34,6 +34,8 @@ public:
     struct
     {
         bool unlocked = false;
+        bool mirror_mode = false;
+        float mirror_threshold = 0.5f;
     } m_parameters;
 
     void render();
