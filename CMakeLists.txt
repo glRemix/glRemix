@@ -30,32 +30,34 @@ set(GLREMIX_SHIM_SOURCE_DIR "${REPO_ROOT}/glRemixShim")
 set(GLREMIX_SHARED_DIR "${REPO_ROOT}/shared") # Do not delete this
 
 include("${REPO_ROOT}/cmake/shared_files.cmake")
-include("${GLREMIX_SHIM_SOURCE_DIR}/cmake/shim_sources.cmake")
 include("${REPO_ROOT}/cmake/shim_helper.cmake")
+include(${REPO_ROOT}/cmake/cmake_source_group.cmake)
 
-set(GLREMIX_SHIM_EXTERNAL_SUFFIX "_builder")
+set(GLREMIX_SHIM_EXTERNAL_PREFIX "UTILITY_")
+set(GLREMIX_SHIM_EXTERNAL_SUFFIX "_Builder")
 
 if(GLREMIX_OVERRIDE_RENDERER_PATH AND NOT DEFINED GLREMIX_CUSTOM_RENDERER_EXE_PATH)
     set(GLREMIX_CUSTOM_RENDERER_EXE_PATH "${GLREMIX_DEPLOY_DIR}/$<CONFIG>/renderer/glRemix_renderer.exe")
 
-    message(WARNING "'GLREMIX_OVERRIDE_RENDERER_PATH' CMake option is enabled but 'GLREMIX_CUSTOM_RENDERER_EXE_PATH' CMake variable was not specified. Setting to default path for now.")
+    message(AUTHOR_WARNING "'GLREMIX_OVERRIDE_RENDERER_PATH' CMake option is enabled but 'GLREMIX_CUSTOM_RENDERER_EXE_PATH' CMake variable was not specified. Setting to default path for now.")
 endif()
 
 # Add external project builders for the shim config, this is to allow building both 32-bit and 64-bit with the 64-bit renderer
 function(glremix_add_shim_builder platform description)
     set(target "${GLREMIX_SHIM_TARGET_PREFIX}${platform}")
-    set(builder "${target}${GLREMIX_SHIM_EXTERNAL_SUFFIX}")
-    set(build_dir "${CMAKE_BINARY_DIR}/external/shim-${platform}")
+    set(builder "${GLREMIX_SHIM_EXTERNAL_PREFIX}${target}${GLREMIX_SHIM_EXTERNAL_SUFFIX}")
+    set(GLREMIX_EXTERNAL_BINARY_DIR "${CMAKE_BINARY_DIR}/external/shim-${platform}")
 
     ExternalProject_Add(${builder}
         SOURCE_DIR "${GLREMIX_SHIM_SOURCE_DIR}"
-        BINARY_DIR "${build_dir}"
+        BINARY_DIR "${GLREMIX_EXTERNAL_BINARY_DIR}"
         CMAKE_GENERATOR "${CMAKE_GENERATOR}"
         CMAKE_GENERATOR_PLATFORM "${platform}"
         CMAKE_ARGS
         -DCMAKE_CXX_STANDARD=20
         -DCMAKE_CXX_STANDARD_REQUIRED=ON
         -DREPO_ROOT=${REPO_ROOT}
+        -DGLREMIX_EXTERNAL_BINARY_DIR=${GLREMIX_EXTERNAL_BINARY_DIR}
         -DGLREMIX_DEPLOY_DIR=${GLREMIX_DEPLOY_DIR}
         -DGLREMIX_SHIM_DEPLOY_SUBDIR=shim/${platform}
         -DGLREMIX_OVERRIDE_RENDERER_PATH=${GLREMIX_OVERRIDE_RENDERER_PATH}
@@ -67,6 +69,7 @@ function(glremix_add_shim_builder platform description)
         "${GLREMIX_DEPLOY_DIR}/$<CONFIG>/shim/${platform}/opengl32.dll"
         "${GLREMIX_DEPLOY_DIR}/$<CONFIG>/shim/${platform}/opengl32.pdb"
     )
+    create_shim_cmake_source_group(${builder})
 
     # Add a step to force rebuild check when source files change
     ExternalProject_Add_Step(${builder} force_build_check
@@ -76,10 +79,12 @@ function(glremix_add_shim_builder platform description)
         ALWAYS FALSE
     )
 
+    include("${GLREMIX_SHIM_SOURCE_DIR}/cmake/shim_sources.cmake")
+
     if(GLREMIX_DEPLOY_DIR)
         ExternalProject_Add_Step(${builder} deploy
             COMMAND ${CMAKE_COMMAND}
-            -Dbuild_dir=${build_dir}
+            -DGLREMIX_EXTERNAL_BINARY_DIR=${GLREMIX_EXTERNAL_BINARY_DIR}
             -Dconfig=$<CONFIG>
             -Doutput_dir=${GLREMIX_DEPLOY_DIR}/$<CONFIG>/shim/${platform}
             -P ${REPO_ROOT}/cmake/deploy_shim.cmake
@@ -92,6 +97,7 @@ function(glremix_add_shim_builder platform description)
     add_dependencies(${target} ${builder})
 
     set_shim_target_properties(${target} ${platform})
+    create_shim_cmake_source_group(${target})
 endfunction()
 
 if((GLREMIX_BUILD_SHIM_WIN32 AND GLREMIX_BUILD_SHIM_X64) OR (NOT GLREMIX_BUILD_SHIM_WIN32 AND NOT GLREMIX_BUILD_SHIM_X64 AND NOT GLREMIX_BUILD_RENDERER))

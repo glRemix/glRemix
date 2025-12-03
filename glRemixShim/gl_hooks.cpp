@@ -1,29 +1,33 @@
 #include "gl_hooks.h"
 
+#include <tsl/robin_map.h>
+#include <mutex>
+#include <vector>
+
 #include <shared/gl_utils.h>
 
 #include "gl_loader.h"
 
 namespace glRemix::hooks
 {
+UINT32 g_active_texture_unit = 0;
+UINT32 g_client_active_texcoord_unit = 0;
 
-static UINT32 g_gen_lists_count = 1;     // monotonic int, passed back to host app in `glGenLists`
-static UINT32 g_gen_textures_count = 1;  // monotonic int, passed back in `glGenTextures`
+GLRemixTextureUnitInterface g_texture_units[k_MAX_TEXTURE_UNITS] = {};
 
-thread_local std::array<GLRemixClientArrayInterface, NUM_CLIENT_ARRAYS> g_client_arrays{};
-static UINT32 g_enabled_client_arrays_count = 0;  // count of currently enabled client arrays
+static UINT32 g_gen_lists_count = 1;
+static UINT32 g_gen_textures_count = 1;
 
-// Assume WGL/OpenGL not called from multiple threads
+thread_local std::array<GLRemixClientArrayInterface, NUM_CLIENT_ARRAYS> g_client_arrays = {};
+UINT32 g_enabled_client_arrays_count = 0;
 
-// wglSetPixelFormat will only be called once per context
-// Or if there are multiple contexts they can share the same format since they're fake anyway...
-tsl::robin_map<HDC, FakePixelFormat> g_pixel_formats;
+tsl::robin_map<HDC, FakePixelFormat> g_pixel_formats = {};
 
 thread_local HGLRC g_current_context = nullptr;
 thread_local HDC g_current_dc = nullptr;
 
 // Window procedure subclassing
-static WNDPROC g_original_wndproc = nullptr;
+WNDPROC g_original_wndproc = nullptr;
 
 /* CORE IMMEDIATE MODE */
 void APIENTRY gl_begin_ovr(GLenum mode)
@@ -701,18 +705,6 @@ void APIENTRY gl_stencil_op_separate_ATI_ovr(GLenum face, GLenum sfail, GLenum d
     g_ipc.write_command(GLCommandType::GLCMD_STENCIL_OP_SEPARATE_ATI, payload);
 }
 
-const GLubyte* APIENTRY gl_get_string_ovr(GLenum name)
-{
-    switch (name)
-    {
-        case GL_EXTENSIONS: return reinterpret_cast<const GLubyte*>(k_EXTENSIONS);
-        case GL_VERSION: return reinterpret_cast<const GLubyte*>("1.3");  // TODO: define in CMake
-        case GL_VENDOR: return reinterpret_cast<const GLubyte*>("glRemix");
-        case GL_RENDERER: return reinterpret_cast<const GLubyte*>("glRemixRenderer");
-        default: return reinterpret_cast<const GLubyte*>("");
-    }
-}
-
 void APIENTRY gl_active_texture_ARB(GLenum texture)
 {
     return;
@@ -1000,6 +992,8 @@ const char* WINAPI get_extensions_string_ARB_ovr(HDC hdc)
 {
     return k_EXTENSIONS;
 }
+
+extern const GLubyte* APIENTRY gl_get_string_ovr(GLenum name);
 
 std::once_flag g_install_flag;
 
