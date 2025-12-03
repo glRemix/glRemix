@@ -17,9 +17,9 @@ function(set_shim_target_properties ${target} ${platform})
         "${GLREMIX_SHIM_SOURCE_DIR}"
         "${REPO_ROOT}/external/robin-map-1.4.0/include"
         "${CMAKE_BINARY_DIR}/external/shim-x64/generated"
-        "${CMAKE_BINARY_DIR}/external/shim-win32/generated"
+        "${CMAKE_BINARY_DIR}/external/shim-Win32/generated"
         "${REPO_ROOT}/build/external/shim-x64/generated"
-        "${REPO_ROOT}/build/external/shim-win32/generated"
+        "${REPO_ROOT}/build/external/shim-Win32/generated"
         "${REPO_ROOT}"
     )
 
