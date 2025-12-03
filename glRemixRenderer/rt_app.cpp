@@ -317,8 +317,7 @@ void glRemix::glRemixRenderer::create()
     {
         D3D12_DESCRIPTOR_HEAP_DESC descriptor_heap_desc{
             .Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-            // 1 million is limit, stick with 100k for now
-            .NumDescriptors = 100000,
+            .NumDescriptors = 1000000,
             .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
         };
         THROW_IF_FALSE(m_context.create_descriptor_heap(descriptor_heap_desc, &m_GPU_descriptor_heap,
@@ -425,9 +424,8 @@ void glRemix::glRemixRenderer::create()
     THROW_IF_FALSE(
         m_context.create_buffer(scratch_buffer_desc, &m_scratch_space, "BLAS scratch space"));
 
-    // Start out with 128 instances/meshes
     dx::BufferDesc instance_buffer_desc{
-        .size = sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * 128,
+        .size = sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * 1024,
         .stride = sizeof(D3D12_RAYTRACING_INSTANCE_DESC),
         .visibility = dx::CPU | dx::GPU,
     };
