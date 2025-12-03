@@ -20,7 +20,12 @@ set(GLREMIX_SHIM_SOURCE_FILES
     "${GLREMIX_SHIM_SOURCE_DIR}/gl_loader.cpp"
     "${GLREMIX_SHIM_SOURCE_DIR}/gl_hooks.cpp"
     "${GLREMIX_SHIM_SOURCE_DIR}/wgl_exports.cpp"
+
+    # override_modules
     "${GLREMIX_SHIM_SOURCE_DIR}/override_modules/state_query.cpp"
+    "${GLREMIX_SHIM_SOURCE_DIR}/override_modules/multitexture.cpp"
+    "${GLREMIX_SHIM_SOURCE_DIR}/override_modules/wgl.cpp"
+    "${GLREMIX_SHIM_SOURCE_DIR}/override_modules/client_state.cpp"
 )
 
 set(GLREMIX_SHIM_HEADER_FILES
@@ -31,6 +36,7 @@ set(GLREMIX_SHIM_HEADER_FILES
     "${GLREMIX_SHIM_SOURCE_DIR}/export_macros.h"
     "${GLREMIX_SHIM_SOURCE_DIR}/undef_export_macros.h"
     "${GLREMIX_SHIM_SOURCE_DIR}/gl_extensions.inl"
+    "${GLREMIX_SHIM_SOURCE_DIR}/override_modules/common_includes.h"
 )
 
 set(GLREMIX_SHIM_RESOURCE_FILES
