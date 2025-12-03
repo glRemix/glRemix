@@ -58,9 +58,28 @@ float3 direct_lighting(float3 hit_pos, float3 N, float3 albedo)
             continue;
 
         float3 light_pos = curr_light.position.xyz;
-        float3 L = normalize(light_pos - hit_pos);
-        float dist = length(light_pos - hit_pos);
+        
+        float3 L = light_pos - hit_pos;
+        float dist = length(L);
+        L = normalize(L);
 
+        // check if obstructed
+        RayDesc shadow_ray;
+        shadow_ray.Origin = hit_pos + N * 0.001f;
+        shadow_ray.Direction = L;
+        shadow_ray.TMin = 0.001f;
+        shadow_ray.TMax = dist - 0.001f;
+        
+        RayPayload shadow_payload;
+        shadow_payload.hit = true;
+        
+        TraceRay(scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, ~0, 0, 1, 0, shadow_ray, shadow_payload);
+        
+        if (shadow_payload.hit)
+        {
+            continue;
+        }
+        
         // attenuation
         float attenuation = 1.0 /
             (curr_light.constant_attenuation +
