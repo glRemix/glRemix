@@ -82,6 +82,11 @@ enum class GLCommandType : UINT32
     GLCMD_STENCIL_OP,
     GLCMD_STENCIL_OP_SEPARATE_ATI,
 
+    // MULTITEXTURE
+    GLCMD_ACTIVE_TEXTURE_ARB,
+    GLCMD_MULTI_TEXCOORD2F_ARB,
+    GLCMD_MULTI_TEXCOORD2FV_ARB,
+
     // Other
     WGLCMD_INPUT_EVENT,
     GLREMIXCMD_SEND_HWND,
@@ -90,15 +95,18 @@ enum class GLCommandType : UINT32
              // of enum elements)
 };
 
+constexpr UINT32 k_MAX_TEXTURE_UNITS = 2;
+
 enum class GLRemixClientArrayType : UINT32
 {
-    VERTEX,    // GL_VERTEX_ARRAY
-    NORMAL,    // GL_NORMAL_ARRAY
-    COLOR,     // GL_COLOR_ARRAY
-    TEXCOORD,  // GL_TEXCOORD_ARRAY
-    COLORIDX,  // GL_INDEX_ARRAY
-    EDGEFLAG,  // GL_EDGEFLAG_ARRAY
-    INDICES,   // `indices` passed in `glDrawElements`
+    VERTEX,     // GL_VERTEX_ARRAY
+    NORMAL,     // GL_NORMAL_ARRAY
+    COLOR,      // GL_COLOR_ARRAY
+    TEXCOORD0,  // GL_TEXCOORD_ARRAY
+    TEXCOORD1,  // GL_MULTITEXTURE_ARB
+    COLORIDX,   // GL_INDEX_ARRAY
+    EDGEFLAG,   // GL_EDGEFLAG_ARRAY
+    INDICES,    // `indices` passed in `glDrawElements`
     _COUNT,
     _INVALID
 };
@@ -456,6 +464,21 @@ struct GLStencilOpSeparateATICommand
     UINT32 dpfail;
     UINT32 dppass;
 };
+
+/* MULTITEXTURE */
+struct GLActiveTextureARBCommand
+{
+    UINT32 texture;  // GL_TEXTURE0_ARB + texture unit index
+};
+
+struct GLMultiTexCoord2fARBCommand
+{
+    UINT32 target;  // GL_TEXTURE0_ARB + unit
+    float s;
+    float t;
+};
+
+/* OTHER */
 
 struct WGLInputEventCommand
 {

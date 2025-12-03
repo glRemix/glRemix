@@ -16,10 +16,8 @@ function(set_shim_target_properties ${target} ${platform})
     target_include_directories(${target} PRIVATE
         "${GLREMIX_SHIM_SOURCE_DIR}"
         "${REPO_ROOT}/external/robin-map-1.4.0/include"
-        "${CMAKE_BINARY_DIR}/external/shim-x64/generated"
-        "${CMAKE_BINARY_DIR}/external/shim-win32/generated"
-        "${REPO_ROOT}/build/external/shim-x64/generated"
-        "${REPO_ROOT}/build/external/shim-win32/generated"
+        "${REPO_ROOT}/build/external/shim-x64/includes"
+        "${REPO_ROOT}/build/external/shim-Win32/includes"
         "${REPO_ROOT}"
     )
 
@@ -30,15 +28,38 @@ function(set_shim_target_properties ${target} ${platform})
         target_link_libraries(glRemix_renderer PRIVATE ${target})
     endif()
 
+    # custom target for generated headers
+    set(GLREMIX_SHIM_ALL_GENERATED_FILES
+        ${GL_GENERATED_WRAPPERS}
+        ${GL_GENERATED_ALIASES}
+        ${WGL_GENERATED_WRAPPERS}
+        ${GLEXT_GENERATED_ENUMS}
+    )
+
+    foreach(_file IN LISTS GLREMIX_SHIM_ALL_GENERATED_FILES)
+        if(NOT EXISTS "${_file}")
+            file(WRITE "${_file}" "/* generated placeholder */")
+        endif()
+    endforeach()
+
+    set(GLREMIX_TARGET_SHIM_GENERATED_HEADERS INTERNAL_${target}_GeneratedHeaders)
+
+    add_custom_target(${GLREMIX_TARGET_SHIM_GENERATED_HEADERS}
+        SOURCES
+        ${GLREMIX_SHIM_ALL_GENERATED_FILES}
+    )
+
+    create_shim_cmake_source_group(${GLREMIX_TARGET_SHIM_GENERATED_HEADERS})
+
     # MSVC SETTINGS
     set_property(DIRECTORY ${REPO_ROOT} PROPERTY VS_STARTUP_PROJECT ${target}) # set as startup proj
 
-    if (GLREMIX_SHIM_DEBUGGER_EXE_PATH) # set launch executable within visual studio
+    if(GLREMIX_SHIM_DEBUGGER_EXE_PATH) # set launch executable within visual studio
         cmake_path(GET GLREMIX_SHIM_DEBUGGER_EXE_PATH PARENT_PATH GLREMIX_SHIM_DEBUGGER_DIR)
         set_target_properties(${target} PROPERTIES
-            VS_DEBUGGER_COMMAND            "${GLREMIX_SHIM_DEBUGGER_EXE_PATH}"
-            VS_DEBUGGER_COMMAND_ARGUMENTS  ""
-            VS_DEBUGGER_WORKING_DIRECTORY  "${GLREMIX_SHIM_DEBUGGER_DIR}"
+            VS_DEBUGGER_COMMAND "${GLREMIX_SHIM_DEBUGGER_EXE_PATH}"
+            VS_DEBUGGER_COMMAND_ARGUMENTS ""
+            VS_DEBUGGER_WORKING_DIRECTORY "${GLREMIX_SHIM_DEBUGGER_DIR}"
         )
     endif()
 endfunction()
@@ -67,7 +88,7 @@ function(set_shim_compile_specifications target)
         )
     endif()
 
-    if (GLREMIX_OVERRIDE_RENDERER_PATH)
+    if(GLREMIX_OVERRIDE_RENDERER_PATH)
         target_compile_definitions(${target} PRIVATE GLREMIX_CUSTOM_RENDERER_EXE_PATH="${GLREMIX_CUSTOM_RENDERER_EXE_PATH}")
     endif()
 

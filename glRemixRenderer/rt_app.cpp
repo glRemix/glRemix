@@ -1287,14 +1287,20 @@ void glRemix::glRemixRenderer::render()
     // Dispatch rays to UAV render target
     if (!state.m_meshes.empty())
     {
-        // float fov = XM_PIDIV2;  // 90 degrees
-        // float aspect = static_cast<float>(win_dims.x) / static_cast<float>(win_dims.y);
-        // float near_z = 0.1f;
-        // float far_z = 1000.0f;
+        XMMATRIX proj;
+        if (m_debug_window.m_parameters.perspective_locked)
+        {
+            float fov = XM_PIDIV2;  // 90 degrees
+            float aspect = static_cast<float>(win_dims.x) / static_cast<float>(win_dims.y);
+            float near_z = 0.1f;
+            float far_z = 1000.0f;
 
-        // XMMATRIX proj = XMMatrixPerspectiveFovRH(fov, aspect, near_z, far_z);
-
-        XMMATRIX proj = XMLoadFloat4x4(&state.m_matrix_stack.top(GL_PROJECTION));
+            proj = XMMatrixPerspectiveFovRH(fov, aspect, near_z, far_z);
+        }
+        else
+        {
+            proj = XMLoadFloat4x4(&state.m_matrix_stack.top(GL_PROJECTION));
+        }
 
         XMMATRIX inv_proj = XMMatrixInverse(nullptr, proj);
 

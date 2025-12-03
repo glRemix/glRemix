@@ -36,6 +36,7 @@ public:
         bool unlocked = false;
         bool mirror_mode = false;
         float mirror_threshold = 0.5f;
+        bool perspective_locked = false;
     } m_parameters;
 
     void render();

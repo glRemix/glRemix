@@ -36,7 +36,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: glremix-shim-win32-${{ matrix.configuration }}
-          path: deploy/${{ matrix.configuration }}/shim/win32
+          path: deploy/${{ matrix.configuration }}/shim/Win32
           retention-days: 7
 
   build-shim-64:

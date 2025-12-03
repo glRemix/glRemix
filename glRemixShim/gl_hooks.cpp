@@ -1,29 +1,32 @@
 #include "gl_hooks.h"
 
+#include <tsl/robin_map.h>
+#include <mutex>
+
 #include <shared/gl_utils.h>
 
 #include "gl_loader.h"
 
 namespace glRemix::hooks
 {
+UINT32 g_active_texture_unit = 0;
+UINT32 g_client_active_texcoord_unit = 0;
 
-static UINT32 g_gen_lists_count = 1;     // monotonic int, passed back to host app in `glGenLists`
-static UINT32 g_gen_textures_count = 1;  // monotonic int, passed back in `glGenTextures`
+GLRemixTextureUnitInterface g_texture_units[k_MAX_TEXTURE_UNITS] = {};
 
-thread_local std::array<GLRemixClientArrayInterface, NUM_CLIENT_ARRAYS> g_client_arrays{};
-static UINT32 g_enabled_client_arrays_count = 0;  // count of currently enabled client arrays
+UINT32 g_gen_lists_count = 1;
+UINT32 g_gen_textures_count = 1;
 
-// Assume WGL/OpenGL not called from multiple threads
+std::array<GLRemixClientArrayInterface, NUM_CLIENT_ARRAYS> g_client_arrays = {};
+UINT32 g_enabled_client_arrays_count = 0;
 
-// wglSetPixelFormat will only be called once per context
-// Or if there are multiple contexts they can share the same format since they're fake anyway...
-tsl::robin_map<HDC, FakePixelFormat> g_pixel_formats;
+tsl::robin_map<HDC, FakePixelFormat> g_pixel_formats = {};
 
 thread_local HGLRC g_current_context = nullptr;
 thread_local HDC g_current_dc = nullptr;
 
 // Window procedure subclassing
-static WNDPROC g_original_wndproc = nullptr;
+WNDPROC g_original_wndproc = nullptr;
 
 /* CORE IMMEDIATE MODE */
 void APIENTRY gl_begin_ovr(GLenum mode)
@@ -109,303 +112,24 @@ GLuint APIENTRY gl_gen_lists_ovr(GLsizei range)
 }
 
 /* CLIENT STATE */
-void APIENTRY gl_enable_client_state_ovr(GLenum array)
-{
-    GLRemixClientArrayInterface* target = nullptr;
+extern void APIENTRY gl_enable_client_state_ovr(GLenum array);
+extern void APIENTRY gl_disable_client_state_ovr(GLenum array);
 
-    GLRemixClientArrayType array_type = utils::MapTo(array);
-    if (array_type == GLRemixClientArrayType::_INVALID)
-    {
-        return;
-    }
+extern void APIENTRY gl_vertex_pointer_ovr(GLint size, GLenum type, GLsizei stride,
+                                           const GLvoid* pointer);
+extern void APIENTRY gl_normal_pointer_ovr(GLenum type, GLsizei stride, const GLvoid* pointer);
+extern void APIENTRY gl_color_pointer_ovr(GLint size, GLenum type, GLsizei stride,
+                                          const GLvoid* pointer);
+extern void APIENTRY gl_index_pointer_ovr(GLenum type, GLsizei stride, const GLvoid* pointer);
+extern void APIENTRY gl_edge_flag_pointer_ovr(GLsizei stride, const GLvoid* pointer);
+extern void APIENTRY gl_tex_coord_pointer_ovr(GLint size, GLenum type, GLsizei stride,
+                                              const GLvoid* pointer);
 
-    target = &g_client_arrays[static_cast<UINT32>(array_type)];
-
-    if (target && !target->enabled)
-    {
-        target->enabled = true;
-        g_enabled_client_arrays_count++;
-    }
-
-    return;  // do NOT send to IPC
-}
-
-void APIENTRY gl_disable_client_state_ovr(GLenum array)
-{
-    GLRemixClientArrayInterface* target = nullptr;
-
-    GLRemixClientArrayType array_type = utils::MapTo(array);
-    if (array_type == GLRemixClientArrayType::_INVALID)
-    {
-        return;
-    }
-
-    target = &g_client_arrays[static_cast<UINT32>(array_type)];
-
-    if (target && target->enabled)
-    {
-        target->enabled = false;
-        g_enabled_client_arrays_count--;
-    }
-
-    return;
-}
-
-void APIENTRY gl_vertex_pointer_ovr(GLint size, GLenum type, GLsizei stride, const void* pointer)
-{
-    GLRemixClientArrayType array_type = GLRemixClientArrayType::VERTEX;
-
-    GLRemixClientArrayInterface& a = g_client_arrays[static_cast<UINT32>(array_type)];
-    a.ipc_payload.size = static_cast<UINT32>(size);
-    a.ipc_payload.type = static_cast<UINT32>(type);
-    a.ipc_payload.stride = utils::InterpretStride(size, type, stride);
-    a.ipc_payload.array_type = array_type;
-    a.ptr = pointer;
-    return;
-}
-
-void APIENTRY gl_normal_pointer_ovr(GLenum type, GLsizei stride, const void* pointer)
-{
-    GLRemixClientArrayType array_type = GLRemixClientArrayType::NORMAL;
-
-    GLRemixClientArrayInterface& a = g_client_arrays[static_cast<UINT32>(array_type)];
-    a.ipc_payload.size = static_cast<UINT32>(3);
-    a.ipc_payload.type = static_cast<UINT32>(type);
-    a.ipc_payload.stride = utils::InterpretStride(3, type, stride);
-    a.ipc_payload.array_type = array_type;
-    a.ptr = pointer;
-    return;
-}
-
-void APIENTRY gl_color_pointer_ovr(GLint size, GLenum type, GLsizei stride, const void* pointer)
-{
-    GLRemixClientArrayType array_type = GLRemixClientArrayType::COLOR;
-
-    GLRemixClientArrayInterface& a = g_client_arrays[static_cast<UINT32>(array_type)];
-    a.ipc_payload.size = static_cast<UINT32>(size);
-    a.ipc_payload.type = static_cast<UINT32>(type);
-    a.ipc_payload.stride = utils::InterpretStride(size, type, stride);
-    a.ipc_payload.array_type = array_type;
-    a.ptr = pointer;
-    return;
-}
-
-void APIENTRY gl_tex_coord_pointer_ovr(GLint size, GLenum type, GLsizei stride, const void* pointer)
-{
-    GLRemixClientArrayType array_type = GLRemixClientArrayType::TEXCOORD;
-
-    GLRemixClientArrayInterface& a = g_client_arrays[static_cast<UINT32>(array_type)];
-    a.ipc_payload.size = static_cast<UINT32>(size);
-    a.ipc_payload.type = static_cast<UINT32>(type);
-    a.ipc_payload.stride = utils::InterpretStride(size, type, stride);
-    a.ipc_payload.array_type = array_type;
-    a.ptr = pointer;
-    return;
-}
-
-void APIENTRY gl_index_pointer_ovr(GLint size, GLenum type, GLsizei stride, const void* pointer)
-{
-    GLRemixClientArrayType array_type = GLRemixClientArrayType::COLORIDX;
-
-    GLRemixClientArrayInterface& a = g_client_arrays[static_cast<UINT32>(array_type)];
-    a.ipc_payload.size = static_cast<UINT32>(size);
-    a.ipc_payload.type = static_cast<UINT32>(type);
-    a.ipc_payload.stride = utils::InterpretStride(size, type, stride);
-    a.ipc_payload.array_type = array_type;
-    a.ptr = pointer;
-    return;
-}
-
-void APIENTRY gl_edge_flag_pointer_ovr(GLint size, GLenum type, GLsizei stride, const void* pointer)
-{
-    GLRemixClientArrayType array_type = GLRemixClientArrayType::EDGEFLAG;
-
-    GLRemixClientArrayInterface& a = g_client_arrays[static_cast<UINT32>(array_type)];
-    a.ipc_payload.size = static_cast<UINT32>(size);
-    a.ipc_payload.type = static_cast<UINT32>(type);
-    a.ipc_payload.stride = utils::InterpretStride(size, type, stride);
-    a.ipc_payload.array_type = array_type;
-    a.ptr = pointer;
-    return;
-}
-
-static UINT32 s_precompute_client_payload_bytes(GLsizei count)
-{
-    UINT32 total_bytes = 0;
-    for (GLRemixClientArrayInterface& a : g_client_arrays)
-    {
-        if (!a.enabled)
-        {
-            continue;
-        }
-
-        const UINT32 a_bytes = utils::ComputeClientArraySize(count, a.ipc_payload.size,
-                                                             a.ipc_payload.type,
-                                                             a.ipc_payload.stride);
-
-        a.ipc_payload.array_bytes = a_bytes;
-        total_bytes += a_bytes;
-    }
-
-    return total_bytes;
-}
-
-static void s_fill_client_array_headers(GLRemixClientArrayHeader (&out)[NUM_CLIENT_ARRAYS])
-{
-    SIZE_T curr = 0;
-    for (const GLRemixClientArrayInterface& i : g_client_arrays)
-    {
-        if (i.enabled)
-        {
-            out[curr] = i.ipc_payload;
-            curr++;
-        }
-    }
-}
-
-void APIENTRY gl_draw_arrays_ovr(GLenum mode, GLint first, GLsizei count)
-{
-    // precompute size of all currently enabled client arrays
-    const UINT32 extra_data_bytes = s_precompute_client_payload_bytes(count);
-
-    GLRemixDrawArraysCommand payload{
-        .mode = static_cast<UINT32>(mode),                             // mode
-        .first = static_cast<UINT32>(first),                           // first
-        .count = static_cast<UINT32>(count),                           // count
-        .enabled = static_cast<UINT32>(g_enabled_client_arrays_count)  // enabled
-    };
-
-    s_fill_client_array_headers(payload.headers);
-
-    // pass in `extra_data_bytes` but pass in the actual extra data pointers later
-    g_ipc.write_command(GLCommandType::GLREMIXCMD_DRAW_ARRAYS, payload, extra_data_bytes, false,
-                        nullptr);
-
-    for (const GLRemixClientArrayInterface& a : g_client_arrays)
-    {
-        if (!a.enabled)
-        {
-            continue;
-        }
-
-        // factor in desired offset
-        const UINT8* a_ptr = reinterpret_cast<const UINT8*>(a.ptr) + (first * a.ipc_payload.stride);
-
-        // write pointer to this extra data directly
-        g_ipc.write_simple(a_ptr, a.ipc_payload.array_bytes);
-    }
-}
-
-static UINT32 s_read_index(SIZE_T i, GLenum type, const void* indices)
-{
-    switch (type)
-    {
-        case GL_UNSIGNED_BYTE:
-            return static_cast<UINT32>(reinterpret_cast<const UINT8*>(indices)[i]);
-        case GL_UNSIGNED_SHORT:
-            return static_cast<UINT32>(reinterpret_cast<const UINT16*>(indices)[i]);
-        case GL_UNSIGNED_INT:
-            return static_cast<UINT32>(reinterpret_cast<const UINT32*>(indices)[i]);
-    }
-    return 0;
-};
-
-static void s_draw_elements_base(GLsizei count, GLenum type, const void* indices)
-{
-    thread_local std::vector<UINT8> scratch_buffer;
-
-    for (const GLRemixClientArrayInterface& a : g_client_arrays)
-    {
-        if (!a.enabled)
-        {
-            continue;
-        }
-
-        if (a.ipc_payload.array_type == GLRemixClientArrayType::INDICES)
-        {  // No need to scatter indices by themselves
-            g_ipc.write_simple(a.ptr, a.ipc_payload.array_bytes);
-            continue;
-        }
-
-        const UINT8* a_ptr = reinterpret_cast<const UINT8*>(a.ptr);
-
-        const UINT32& a_bytes = a.ipc_payload.array_bytes;
-        const UINT32& a_stride = a.ipc_payload.stride;
-
-        scratch_buffer.resize(a_bytes);
-        UINT8* dst_ptr = scratch_buffer.data();
-
-        /* SCATTER STEP */
-        for (UINT32 i = 0; i < static_cast<UINT32>(count); i++)
-        {
-            UINT32 idx = s_read_index(i, type, indices);
-
-            const UINT8* src = a_ptr + (idx * a_stride);
-            UINT8* dst = dst_ptr + (i * a_stride);
-
-            memcpy(dst, src, a_stride);
-        }
-
-        g_ipc.write_simple(dst_ptr, a.ipc_payload.array_bytes);  // write pointer directly
-    }
-}
-
-/**
- * @brief OpenGL has indices in a separate category from normal client arrays but we will send
- * it in our payload as just another client array.
- */
-static void s_fake_gl_indices_pointer(GLenum type, const void* indices)
-{
-    GLRemixClientArrayType array_type = GLRemixClientArrayType::INDICES;
-
-    GLRemixClientArrayInterface& a = g_client_arrays[static_cast<UINT32>(array_type)];
-    a.ipc_payload.size = 1;
-    a.ipc_payload.type = static_cast<UINT32>(type);
-    a.ipc_payload.stride = utils::InterpretStride(1, type, 0);
-    a.ipc_payload.array_type = array_type;
-    a.enabled = true;
-    a.ptr = indices;
-}
-
-void APIENTRY gl_draw_elements_ovr(GLenum mode, GLsizei count, GLenum type, const void* indices)
-{
-    s_fake_gl_indices_pointer(type, indices);
-
-    const UINT32 extra_data_bytes = s_precompute_client_payload_bytes(count);
-
-    GLRemixDrawElementsCommand payload{ .mode = static_cast<UINT32>(mode),
-                                        .count = static_cast<UINT32>(count),
-                                        .type = static_cast<UINT32>(type),
-                                        .enabled = g_enabled_client_arrays_count };
-
-    s_fill_client_array_headers(payload.headers);
-
-    g_ipc.write_command(GLCommandType::GLREMIXCMD_DRAW_ELEMENTS, payload, extra_data_bytes, false,
-                        nullptr);
-
-    s_draw_elements_base(count, type, indices);
-}
-
-void APIENTRY gl_draw_range_elements_ovr(GLenum mode, GLuint start, GLuint end, GLsizei count,
-                                         GLenum type, const void* indices)
-{
-    s_fake_gl_indices_pointer(type, indices);
-
-    const UINT32 extra_data_bytes = s_precompute_client_payload_bytes(count);
-
-    GLRemixDrawRangeElementsCommand payload{ .mode = static_cast<UINT32>(mode),
-                                             .start = static_cast<UINT32>(start),
-                                             .count = static_cast<UINT32>(count),
-                                             .type = static_cast<UINT32>(type),
-                                             .enabled = g_enabled_client_arrays_count };
-
-    s_fill_client_array_headers(payload.headers);
-
-    g_ipc.write_command(GLCommandType::GLREMIXCMD_DRAW_RANGE_ELEMENTS, payload, extra_data_bytes,
-                        false, nullptr);
-
-    s_draw_elements_base(count, type, indices);
-}
+extern void APIENTRY gl_draw_arrays_ovr(GLenum mode, GLint first, GLsizei count);
+extern void APIENTRY gl_draw_elements_ovr(GLenum mode, GLsizei count, GLenum type,
+                                          const GLvoid* indices);
+extern void APIENTRY gl_draw_range_elements_ovr(GLenum mode, GLuint start, GLuint end,
+                                                GLsizei count, GLenum type, const GLvoid* indices);
 
 /* MATRIX OPERATIONS */
 void APIENTRY gl_matrix_mode_ovr(GLenum mode)
@@ -701,305 +425,37 @@ void APIENTRY gl_stencil_op_separate_ATI_ovr(GLenum face, GLenum sfail, GLenum d
     g_ipc.write_command(GLCommandType::GLCMD_STENCIL_OP_SEPARATE_ATI, payload);
 }
 
-const GLubyte* APIENTRY gl_get_string_ovr(GLenum name)
-{
-    switch (name)
-    {
-        case GL_EXTENSIONS: return reinterpret_cast<const GLubyte*>(k_EXTENSIONS);
-        case GL_VERSION: return reinterpret_cast<const GLubyte*>("1.3");  // TODO: define in CMake
-        case GL_VENDOR: return reinterpret_cast<const GLubyte*>("glRemix");
-        case GL_RENDERER: return reinterpret_cast<const GLubyte*>("glRemixRenderer");
-        default: return reinterpret_cast<const GLubyte*>("");
-    }
-}
+/* WGL (WINDOWS GRAPHICS LIBRARY) */
 
-void APIENTRY gl_active_texture_ARB(GLenum texture)
-{
-    return;
-}
+extern int WINAPI wgl_choose_pixel_format_ovr(HDC hdc, const PIXELFORMATDESCRIPTOR* ppfd);
+extern int WINAPI wgl_describe_pixel_format_ovr(HDC hdc, int fmt, UINT bytes,
+                                                LPPIXELFORMATDESCRIPTOR desc);
+extern int WINAPI wgl_get_pixel_format_ovr(HDC hdc);
+extern BOOL WINAPI wgl_set_pixel_format_ovr(HDC hdc, int fmt, const PIXELFORMATDESCRIPTOR* desc);
+extern BOOL WINAPI wgl_swap_buffers_ovr(HDC hdc);
 
-void APIENTRY gl_client_active_texture_ARB(GLenum texture)
-{
-    return;
-}
+extern HGLRC WINAPI wgl_create_context_ovr(HDC dc);
+extern BOOL WINAPI wgl_delete_context_ovr(HGLRC ctx);
+extern HGLRC WINAPI wgl_get_current_context_ovr(void);
+extern HDC WINAPI wgl_get_current_dc_ovr(void);
+extern BOOL WINAPI wgl_make_current_ovr(HDC dc, HGLRC ctx);
+extern BOOL WINAPI wgl_share_lists_ovr(HGLRC src, HGLRC dst);
 
-void APIENTRY gl_multi_tex_coord_2f_ARB(GLenum target, float s, float t)
-{
-    return;
-}
+extern BOOL WINAPI wgl_swap_interval_EXT_ovr(int interval);
+extern const char* WINAPI wgl_get_extensions_string_ARB_ovr(HDC hdc);
+extern const char* WINAPI wgl_get_extensions_string_EXT_ovr(void);
 
-void APIENTRY gl_multi_tex_coord_2fv_ARB(GLenum target, const float* v)
-{
-    return;
-}
+/* STATE QUERY */
+extern const GLubyte* APIENTRY gl_get_string_ovr(GLenum name);
+extern void APIENTRY gl_get_integerv_ovr(GLenum pname, GLint* data);
+extern GLenum APIENTRY gl_get_error_ovr();
 
-void APIENTRY gl_get_integer_v(GLenum pname, GLint* data)
-{
-    switch (pname)
-    {
-        case GL_MAX_TEXTURE_SIZE: *data = 4096; return;
+/* MULTITEXTURE */
+extern void APIENTRY gl_active_texture_ARB_ovr(GLenum texture);
+extern void APIENTRY gl_client_active_texture_ARB_ovr(GLenum texture);
 
-        default: *data = 0; return;
-    }
-}
-
-GLenum APIENTRY gl_get_error()
-{
-    return GL_NO_ERROR;
-}
-
-/* WGL (Windows Graphics Library) overrides */
-
-// Window procedure to capture input events and forward to IPC
-static LRESULT CALLBACK s_input_capture_wnd_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
-{
-    bool should_send = false;
-    switch (msg)
-    {
-        case WM_MOUSEMOVE:
-        case WM_LBUTTONDOWN:
-        case WM_LBUTTONUP:
-        case WM_RBUTTONDOWN:
-        case WM_RBUTTONUP:
-        case WM_MBUTTONDOWN:
-        case WM_MBUTTONUP:
-        case WM_MOUSEWHEEL:
-        case WM_MOUSEHWHEEL:
-        case WM_XBUTTONDOWN:
-        case WM_XBUTTONUP:
-        case WM_LBUTTONDBLCLK:
-        case WM_RBUTTONDBLCLK:
-        case WM_MBUTTONDBLCLK:
-        case WM_XBUTTONDBLCLK:
-
-        case WM_KEYDOWN:
-        case WM_KEYUP:
-        case WM_SYSKEYDOWN:
-        case WM_SYSKEYUP:
-        case WM_CHAR:
-
-        case WM_SETFOCUS:
-        case WM_KILLFOCUS:
-
-        case WM_SETCURSOR:
-        case WM_MOUSELEAVE: should_send = true; break;
-    }
-
-    if (should_send)
-    {
-        const WGLInputEventCommand payload{
-            .msg = msg,
-            .wparam = wparam,
-            .lparam = static_cast<UINT64>(lparam),
-        };
-
-        g_ipc.write_command(GLCommandType::WGLCMD_INPUT_EVENT, payload);
-    }
-
-    // Call the original window procedure
-    if (g_original_wndproc)
-    {
-        return CallWindowProc(g_original_wndproc, hwnd, msg, wparam, lparam);
-    }
-    return DefWindowProc(hwnd, msg, wparam, lparam);
-}
-
-BOOL WINAPI swap_buffers_ovr(HDC dc)
-{
-    if (!gl::launch_renderer())
-    {
-        return FALSE;
-    }
-
-    // Install window procedure hook to capture input events
-    if (!g_original_wndproc)
-    {
-        // Derive HWND from HDC for swapchain creation
-        HWND hwnd = WindowFromDC(dc);
-        assert(hwnd);
-
-        g_original_wndproc = reinterpret_cast<WNDPROC>(
-            SetWindowLongPtr(hwnd, GWLP_WNDPROC,
-                             reinterpret_cast<LONG_PTR>(s_input_capture_wnd_proc)));
-
-        GLRemixSendHWNDCommand payload{ hwnd };
-
-        g_ipc.write_command(GLCommandType::GLREMIXCMD_SEND_HWND, payload);
-    }
-
-    g_ipc.end_frame();
-    g_ipc.start_frame_or_wait();
-
-    return TRUE;
-}
-
-FakePixelFormat s_create_default_pixel_format(const PIXELFORMATDESCRIPTOR* requested)
-{
-    if (requested == nullptr)
-    {
-        // Standard 32-bit color 24-bit depth 8-bit stencil double buffered format
-        return { .descriptor = { .nSize = sizeof(PIXELFORMATDESCRIPTOR),
-                                 .nVersion = 1,
-                                 .dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL
-                                            | PFD_DOUBLEBUFFER,
-                                 .iPixelType = PFD_TYPE_RGBA,
-                                 .cColorBits = 32,
-                                 .cRedBits = 8,
-                                 .cRedShift = 16,
-                                 .cGreenBits = 8,
-                                 .cGreenShift = 8,
-                                 .cBlueBits = 8,
-                                 .cBlueShift = 0,
-                                 .cAlphaBits = 8,
-                                 .cAlphaShift = 24,
-                                 .cAccumBits = 0,
-                                 .cAccumRedBits = 0,
-                                 .cAccumGreenBits = 0,
-                                 .cAccumBlueBits = 0,
-                                 .cAccumAlphaBits = 0,
-                                 .cDepthBits = 24,
-                                 .cStencilBits = 8,
-                                 .cAuxBuffers = 0,
-                                 .iLayerType = PFD_MAIN_PLANE,
-                                 .bReserved = 0,
-                                 .dwLayerMask = 0,
-                                 .dwVisibleMask = 0,
-                                 .dwDamageMask = 0 } };
-    }
-    FakePixelFormat result;
-    result.descriptor = *requested;
-    result.descriptor.nSize = sizeof(PIXELFORMATDESCRIPTOR);
-    result.descriptor.nVersion = 1;
-    return result;
-}
-
-int WINAPI choose_pixel_format_ovr(HDC dc, const PIXELFORMATDESCRIPTOR* descriptor)
-{
-    if (dc == nullptr)
-    {
-        return 0;
-    }
-
-    g_pixel_formats[dc] = s_create_default_pixel_format(descriptor);
-    return g_pixel_formats[dc].id;
-}
-
-int WINAPI describe_pixel_format_ovr(HDC dc, int pixel_format, UINT bytes,
-                                     LPPIXELFORMATDESCRIPTOR descriptor)
-{
-    if (dc == nullptr || pixel_format <= 0)
-    {
-        return 0;
-    }
-
-    // When descriptor is NULL, return the maximum pixel format index
-    if (descriptor == nullptr)
-    {
-        return 1;  // We only support one pixel format
-    }
-
-    // Only pixel format 1 is valid for us
-    if (pixel_format > 1)
-    {
-        return 0;  // Invalid pixel format index
-    }
-
-    // Fill in the descriptor with our default pixel format
-    // Use the stored format if available, otherwise use default
-    auto it = g_pixel_formats.find(dc);
-    if (it != g_pixel_formats.end())
-    {
-        *descriptor = it.value().descriptor;
-    }
-    else
-    {
-        *descriptor = s_create_default_pixel_format(nullptr).descriptor;
-    }
-
-    return 1;  // Return max number of formats available
-}
-
-int WINAPI get_pixel_format_ovr(HDC dc)
-{
-    if (dc == nullptr)
-    {
-        return 0;
-    }
-
-    if (!g_pixel_formats.contains(dc))
-    {
-        return 0;
-    }
-
-    return g_pixel_formats[dc].id;
-}
-
-BOOL WINAPI set_pixel_format_ovr(HDC dc, int pixel_format, const PIXELFORMATDESCRIPTOR* descriptor)
-{
-    if (dc == nullptr || pixel_format <= 0)
-    {
-        return FALSE;
-    }
-
-    g_pixel_formats[dc] = s_create_default_pixel_format(descriptor);
-    g_pixel_formats[dc].id = pixel_format;
-
-    return TRUE;
-}
-
-HGLRC WINAPI create_context_ovr(HDC dc)
-{
-    if (!gl::initialize())
-    {
-        // this allows the host app to attempt a fallback if they have one
-        // as we've properly error-handled in `initialize()`, this is appropriate.
-        return nullptr;
-    }
-
-    return reinterpret_cast<HGLRC>(static_cast<UINT_PTR>(0xDEADBEEF));  // Dummy context handle
-}
-
-BOOL WINAPI delete_context_ovr(HGLRC context)
-{
-    return gl::shutdown();
-}
-
-HGLRC WINAPI get_current_context_ovr()
-{
-    return g_current_context;
-}
-
-HDC WINAPI get_current_dc_ovr()
-{
-    return g_current_dc;
-}
-
-BOOL WINAPI make_current_ovr(HDC dc, HGLRC context)
-{
-    g_current_dc = dc;
-    g_current_context = context;
-    return TRUE;
-}
-
-BOOL WINAPI share_lists_ovr(HGLRC, HGLRC)
-{
-    return TRUE;
-}
-
-BOOL WINAPI swap_interval_EXT_ovr(int interval)
-{
-    return TRUE;
-}
-
-const char* WINAPI get_extensions_string_EXT_ovr()
-{
-    return k_EXTENSIONS;
-}
-
-const char* WINAPI get_extensions_string_ARB_ovr(HDC hdc)
-{
-    return k_EXTENSIONS;
-}
+extern void APIENTRY gl_multi_texcoord2f_ARB_ovr(GLenum unit, GLfloat s, GLfloat t);
+extern void APIENTRY gl_multi_texcoord2fv_ARB_ovr(GLenum unit, const GLfloat* v);
 
 std::once_flag g_install_flag;
 
@@ -1092,38 +548,42 @@ void install_overrides()
         gl::register_hook("glStencilOpSeparateATI",
                           reinterpret_cast<PROC>(&gl_stencil_op_separate_ATI_ovr));
 
-        /* MISC */
-        gl::register_hook("glGetString", reinterpret_cast<PROC>(&gl_get_string_ovr));
-        gl::register_hook("glGetIntegerv", reinterpret_cast<PROC>(&gl_get_integer_v));
-        gl::register_hook("glGetError", reinterpret_cast<PROC>(&gl_get_error));
-        gl::register_hook("glActiveTextureARB", reinterpret_cast<PROC>(&gl_active_texture_ARB));
-        gl::register_hook("glClientActiveTexture",
-                          reinterpret_cast<PROC>(&gl_client_active_texture_ARB));
-        gl::register_hook("glClientActiveTextureARB",
-                          reinterpret_cast<PROC>(&gl_client_active_texture_ARB));
-        gl::register_hook("glMultiTexCoord2fARB",
-                          reinterpret_cast<PROC>(&gl_multi_tex_coord_2f_ARB));
-        gl::register_hook("glMultiTexCoord2fvARB",
-                          reinterpret_cast<PROC>(&gl_multi_tex_coord_2fv_ARB));
-
-        /* WGL (Windows Graphics Library) overrides */
-        gl::register_hook("wglChoosePixelFormat", reinterpret_cast<PROC>(&choose_pixel_format_ovr));
+        /* WGL (WINDOWS GRAPHICS LIBRARY) */
+        gl::register_hook("wglChoosePixelFormat",
+                          reinterpret_cast<PROC>(&wgl_choose_pixel_format_ovr));
         gl::register_hook("wglDescribePixelFormat",
-                          reinterpret_cast<PROC>(&describe_pixel_format_ovr));
-        gl::register_hook("wglGetPixelFormat", reinterpret_cast<PROC>(&get_pixel_format_ovr));
-        gl::register_hook("wglSetPixelFormat", reinterpret_cast<PROC>(&set_pixel_format_ovr));
-        gl::register_hook("wglSwapBuffers", reinterpret_cast<PROC>(&swap_buffers_ovr));
-        gl::register_hook("wglCreateContext", reinterpret_cast<PROC>(&create_context_ovr));
-        gl::register_hook("wglDeleteContext", reinterpret_cast<PROC>(&delete_context_ovr));
-        gl::register_hook("wglGetCurrentContext", reinterpret_cast<PROC>(&get_current_context_ovr));
-        gl::register_hook("wglGetCurrentDC", reinterpret_cast<PROC>(&get_current_dc_ovr));
-        gl::register_hook("wglMakeCurrent", reinterpret_cast<PROC>(&make_current_ovr));
-        gl::register_hook("wglShareLists", reinterpret_cast<PROC>(&share_lists_ovr));
-        gl::register_hook("wglSwapIntervalEXT", reinterpret_cast<PROC>(&swap_interval_EXT_ovr));
+                          reinterpret_cast<PROC>(&wgl_describe_pixel_format_ovr));
+        gl::register_hook("wglGetPixelFormat", reinterpret_cast<PROC>(&wgl_get_pixel_format_ovr));
+        gl::register_hook("wglSetPixelFormat", reinterpret_cast<PROC>(&wgl_set_pixel_format_ovr));
+        gl::register_hook("wglSwapBuffers", reinterpret_cast<PROC>(&wgl_swap_buffers_ovr));
+        gl::register_hook("wglCreateContext", reinterpret_cast<PROC>(&wgl_create_context_ovr));
+        gl::register_hook("wglDeleteContext", reinterpret_cast<PROC>(&wgl_delete_context_ovr));
+        gl::register_hook("wglGetCurrentContext",
+                          reinterpret_cast<PROC>(&wgl_get_current_context_ovr));
+        gl::register_hook("wglGetCurrentDC", reinterpret_cast<PROC>(&wgl_get_current_dc_ovr));
+        gl::register_hook("wglMakeCurrent", reinterpret_cast<PROC>(&wgl_make_current_ovr));
+        gl::register_hook("wglShareLists", reinterpret_cast<PROC>(&wgl_share_lists_ovr));
+        gl::register_hook("wglSwapIntervalEXT", reinterpret_cast<PROC>(&wgl_swap_interval_EXT_ovr));
         gl::register_hook("wglGetExtensionsStringARB",
-                          reinterpret_cast<PROC>(&get_extensions_string_ARB_ovr));
+                          reinterpret_cast<PROC>(&wgl_get_extensions_string_ARB_ovr));
         gl::register_hook("wglGetExtensionsStringEXT",
-                          reinterpret_cast<PROC>(&get_extensions_string_EXT_ovr));
+                          reinterpret_cast<PROC>(&wgl_get_extensions_string_EXT_ovr));
+
+        /* STATE QUERY */
+        gl::register_hook("glGetString", reinterpret_cast<PROC>(&gl_get_string_ovr));
+        gl::register_hook("glGetIntegerv", reinterpret_cast<PROC>(&gl_get_integerv_ovr));
+        gl::register_hook("glGetError", reinterpret_cast<PROC>(&gl_get_error_ovr));
+
+        /* MULTITEXTURE */
+        gl::register_hook("glActiveTextureARB", reinterpret_cast<PROC>(&gl_active_texture_ARB_ovr));
+        gl::register_hook("glClientActiveTexture",
+                          reinterpret_cast<PROC>(&gl_client_active_texture_ARB_ovr));
+        gl::register_hook("glClientActiveTextureARB",
+                          reinterpret_cast<PROC>(&gl_client_active_texture_ARB_ovr));
+        gl::register_hook("glMultiTexCoord2fARB",
+                          reinterpret_cast<PROC>(&gl_multi_texcoord2f_ARB_ovr));
+        gl::register_hook("glMultiTexCoord2fvARB",
+                          reinterpret_cast<PROC>(&gl_multi_texcoord2fv_ARB_ovr));
     };
 
     std::call_once(g_install_flag, register_all_hooks_once_fn);
