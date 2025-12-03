@@ -20,7 +20,7 @@ class DebugWindow
     float m_fps = 0.0f;
 
     const std::vector<MeshRecord>* m_meshes = nullptr;
-    uint64_t m_meshID_to_replace = -1;
+    uint64_t m_mesh_ID_to_replace = -1;
     char m_asset_path_buffer[256] = "";
     std::function<void(uint64_t meshID, const char* asset_path)>
         m_replace_mesh_callback;  // replace_mesh function from rt_app
