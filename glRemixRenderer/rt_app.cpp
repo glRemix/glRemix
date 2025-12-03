@@ -985,22 +985,29 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
     {
         instance_descs.resize(instance_count);
     }
+
+    UINT visible_instance_count = 0;
     for (UINT i = 0; i < instance_count; i++)
     {
         const MeshRecord& mesh = state.m_meshes[i];
+
+        if (!mesh.visible)
+        {
+            continue;
+        }
 
         const auto blas_addr = m_mesh_resources[mesh.blas_vb_ib_idx].blas.get_gpu_address();
         assert(blas_addr);
 
         D3D12_RAYTRACING_INSTANCE_DESC desc = mv_to_instance_desc(state.m_matrix_pool[mesh.mv_idx]);
 
-        desc.InstanceID = i;
+        desc.InstanceID = visible_instance_count;
         desc.InstanceMask = 0xFF;
         desc.InstanceContributionToHitGroupIndex = 0;
         desc.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
         desc.AccelerationStructure = blas_addr;
 
-        instance_descs[i] = desc;
+        instance_descs[visible_instance_count++] = desc;
     }
 
     if (m_tlas.instance.desc.size < sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * instance_count)
@@ -1190,7 +1197,7 @@ void glRemix::glRemixRenderer::render()
     m_context.start_imgui_frame();
 
     // render imgui
-    m_debug_window.set_mesh_buffer(state.m_meshes);
+    m_debug_window.set_mesh_buffer(state.m_meshes, state.m_mesh_map);
     m_debug_window.render();
 
     // Build all pending buffers from geometry collected in read_gl_command_stream
@@ -1214,6 +1221,12 @@ void glRemix::glRemixRenderer::render()
     gpu_mesh_records_to_copy.clear();
     for (auto& mesh : state.m_meshes)
     {
+        // if mesh not visible, skip
+        if (!mesh.visible)
+        {
+            continue;
+        }
+
         // InstanceID will be used to access GPUMeshRecord in shader
         GPUMeshRecord gpu_mesh;
         // Materials

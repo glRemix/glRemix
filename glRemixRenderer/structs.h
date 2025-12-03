@@ -26,6 +26,8 @@ struct MeshRecord
 
     // For garbage collection, last frame this mesh record was accessed
     UINT32 last_frame;
+
+    bool visible = true;  // can be toggled in the imgui
 };
 
 struct BufferAndDescriptor
