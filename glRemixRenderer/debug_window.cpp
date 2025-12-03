@@ -2,10 +2,12 @@
 
 #include <utility>
 #include <imgui.h>
+#include "debug_log.h"
+#include <cstdio>
 
 using namespace glRemix;
 
-void DebugWindow::render(DebugInfo debug_info)
+void DebugWindow::render(const DebugInfo debug_info)
 {
     if (ImGui::Begin("glRemix", nullptr, 0))
     {
@@ -152,5 +154,41 @@ void DebugWindow::render_settings()
 
 void DebugWindow::render_debug_log()
 {
-    // TODO: Debug messages
+    static bool auto_scroll = true;
+    ImGui::Checkbox("Auto-scroll", &auto_scroll);
+    ImGui::Separator();
+
+    ImGui::BeginChild("##DebugLogChild", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
+
+    const auto cur = dbglog_current_seq();
+    const auto& log = get_debug_log();
+    const auto start = cur > DebugLog::k_capacity ? cur - DebugLog::k_capacity : 0;
+
+    for (auto seq = start; seq < cur; ++seq)
+    {
+        const auto idx = static_cast<UINT32>(seq % DebugLog::k_capacity);
+        const auto& e = log.buffer[idx];
+        // Only show if published and matches expected sequence
+        if (e.seq == seq + 1)
+        {
+            if (std::strncmp(e.text, "ERROR:", 6) == 0)
+            {
+                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", e.text);
+            }
+            else if (std::strncmp(e.text, "WARN:", 5) == 0)
+            {
+                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "%s", e.text);
+            }
+            else
+            {
+                ImGui::TextUnformatted(e.text);
+            }
+        }
+    }
+
+    if (auto_scroll)
+    {
+        ImGui::SetScrollHereY(1.0f);
+    }
+    ImGui::EndChild();
 }

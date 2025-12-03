@@ -30,6 +30,7 @@ set(RENDERER_SOURCES
     "rt_app.cpp"
     "debug_window.cpp"
     "mesh_loader.cpp"
+    "debug_log.cpp"
 )
 
 set(RENDERER_HEADERS
@@ -59,6 +60,7 @@ set(RENDERER_HEADERS
     "rt_app.h"
     "debug_window.h"
     "mesh_loader.h"
+    "debug_log.h"
 )
 
 set(D3D12MA_SOURCES

@@ -100,7 +100,7 @@ class glRemixRenderer : public Application
     void build_mesh_blas_batch(std::vector<size_t> pending_indices, size_t count,
                                ID3D12GraphicsCommandList7* cmd_list);
     void create_pending_buffers(ID3D12GraphicsCommandList7* cmd_list);
-    void create_pending_textures(ID3D12GraphicsCommandList7* cmd_list);
+    bool create_pending_textures(ID3D12GraphicsCommandList7* cmd_list);
     void create_environment_map(ID3D12GraphicsCommandList7* cmd_list, const char* path);
     void build_tlas(ID3D12GraphicsCommandList7* cmd_list);
 

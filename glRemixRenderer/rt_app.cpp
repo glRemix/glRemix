@@ -16,6 +16,8 @@
 
 #include <DirectXTex.h>
 
+#include "debug_log.h"
+
 glRemix::glDriver glRemix::glRemixRenderer::sm_driver;
 
 void glRemix::glRemixRenderer::create_environment_map(ID3D12GraphicsCommandList7* cmd_list,
@@ -545,12 +547,12 @@ void glRemix::glRemixRenderer::create_pending_buffers(ID3D12GraphicsCommandList7
     state.m_pending_geometries.clear();
 }
 
-void glRemix::glRemixRenderer::create_pending_textures(ID3D12GraphicsCommandList7* cmd_list)
+bool glRemix::glRemixRenderer::create_pending_textures(ID3D12GraphicsCommandList7* cmd_list)
 {
     glState& state = sm_driver.get_state();
     if (state.m_pending_textures.empty())
     {
-        return;
+        return false;
     }
 
     for (auto& kv : state.m_pending_textures)
@@ -596,6 +598,7 @@ void glRemix::glRemixRenderer::create_pending_textures(ID3D12GraphicsCommandList
     m_gfx_queue.queue->ExecuteCommandLists(1, lists.data());
 
     state.m_pending_textures.clear();
+    return true;
 }
 
 void glRemix::glRemixRenderer::build_mesh_blas_batch(std::vector<size_t> pending_indices,
@@ -1010,6 +1013,7 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
         };
         THROW_IF_FALSE(m_context.create_buffer(instance_buffer_desc, &m_tlas.instance,
                                                "TLAS instance buffer"));
+        dbglog_push("WARN: TLAS instance buffer recreated");
     }
 
     void* cpu_ptr;
@@ -1032,7 +1036,6 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
     assert(tlas_prebuild_info.ScratchDataSizeInBytes < m_scratch_space.desc.size);
 
     // Only recreate buffer on first time or if too small
-    // TODO: A huge warning should be issued when this happens
     if (tlas_prebuild_info.ResultDataMaxSizeInBytes > m_tlas.buffer.desc.size)
     {
         const dx::BufferDesc tlas_buffer_desc{
@@ -1043,6 +1046,7 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
         };
         THROW_IF_FALSE(m_context.create_buffer(tlas_buffer_desc, &m_tlas.buffer, "TLAS buffer"));
         should_update = false;  // Can't update a newly created buffer
+        dbglog_push("WARN: TLAS buffer recreated");
     }
 
     if (should_update)
@@ -1115,8 +1119,8 @@ void glRemix::glRemixRenderer::render()
 
     while (state.m_materials.size() > m_material_buffers.size() * MATERIALS_PER_BUFFER)
     {
-        // TODO: Issue huge warning when this happens
         create_material_buffer();
+        dbglog_push("WARN: Allocated new material buffer");
     }
 
     const auto num_buffers_to_update = ceil_div(state.m_materials.size(), MATERIALS_PER_BUFFER);
@@ -1201,7 +1205,10 @@ void glRemix::glRemixRenderer::render()
         THROW_IF_FALSE(m_context.create_command_list(upload_cmd_list.ReleaseAndGetAddressOf(),
                                                      m_rt_cmd_pools[get_frame_index()],
                                                      "texture upload command list"));
-        create_pending_textures(upload_cmd_list.Get());
+        if (create_pending_textures(upload_cmd_list.Get()))
+        {
+            dbglog_push("INFO: Created pending textures");
+        }
     }
 
     // replace meshes in m_meshes if applicable
@@ -1211,6 +1218,7 @@ void glRemix::glRemixRenderer::render()
     while (state.m_meshes.size() > m_gpu_meshrecord_buffers.size() * MESHRECORDS_PER_BUFFER)
     {
         create_mesh_record_buffer();
+        dbglog_push("WARN: Allocated new mesh record buffer");
     }
 
     // Currently reserve TLAS, 1 UAV RT, 1 ENV SRV, 2 CBV
