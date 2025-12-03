@@ -80,8 +80,12 @@ file(GLOB FASTGLTF_SOURCES
     "${FASTGLTF_DIR}/*.cpp"
 )
 
-add_executable(${PROJECT_NAME} 
-    ${RENDERER_SOURCES} 
+file(GLOB GLREMIX_RENDERER_RESOURCE_FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt"
+)
+
+add_executable(${PROJECT_NAME}
+    ${RENDERER_SOURCES}
     ${RENDERER_HEADERS}
     ${SHARED_HEADERS}
     ${SHARED_SOURCES}
@@ -89,11 +93,10 @@ add_executable(${PROJECT_NAME}
     ${IMGUI_SOURCES}
     ${FASTGLTF_SOURCES}
     ${SHADER_FILES}
+    ${GLREMIX_RENDERER_RESOURCE_FILES}
 )
 
-
-
-target_include_directories(${PROJECT_NAME} PRIVATE 
+target_include_directories(${PROJECT_NAME} PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${REPO_ROOT}/external/robin-map-1.4.0/include"
     "${REPO_ROOT}/external/fastgltf/include"
@@ -140,38 +143,38 @@ if(GLREMIX_DEPLOY_DIR)
         COMMAND ${CMAKE_COMMAND} -E echo "Copying renderer executable to ${_GLREMIX_RENDERER_DEPLOY_CONFIG_DIR}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${_GLREMIX_RENDERER_DEPLOY_CONFIG_DIR}"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:${PROJECT_NAME}>
-            "${_GLREMIX_RENDERER_DEPLOY_CONFIG_DIR}/$<TARGET_FILE_NAME:${PROJECT_NAME}>"
+        $<TARGET_FILE:${PROJECT_NAME}>
+        "${_GLREMIX_RENDERER_DEPLOY_CONFIG_DIR}/$<TARGET_FILE_NAME:${PROJECT_NAME}>"
     )
 
     if(MSVC)
         add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E echo "Copying renderer PDB to ${_GLREMIX_RENDERER_DEPLOY_CONFIG_DIR}"
             COMMAND ${CMAKE_COMMAND}
-                -Dsrc="$<TARGET_PDB_FILE:${PROJECT_NAME}>"
-                -Ddst="${_GLREMIX_RENDERER_DEPLOY_CONFIG_DIR}/$<TARGET_PDB_FILE_NAME:${PROJECT_NAME}>"
-                -P "${_GLREMIX_COPY_IF_EXISTS_SCRIPT}"
+            -Dsrc="$<TARGET_PDB_FILE:${PROJECT_NAME}>"
+            -Ddst="${_GLREMIX_RENDERER_DEPLOY_CONFIG_DIR}/$<TARGET_PDB_FILE_NAME:${PROJECT_NAME}>"
+            -P "${_GLREMIX_COPY_IF_EXISTS_SCRIPT}"
         )
     endif()
 
 endif()
 
 if(WIN32)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE 
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
         NOMINMAX
-        UNICODE 
+        UNICODE
         _UNICODE
         WIN32_LEAN_AND_MEAN
         $<$<CONFIG:RelWithDebInfo>:CONFIG_RELWITHDEBINFO>
         $<$<CONFIG:MinSizeRel>:CONFIG_MINSIZEREL>
     )
-    
+
     if(ENABLE_GPU_BASED_VALIDATION)
         target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_GPU_BASED_VALIDATION)
     endif()
-    
+
     if(MSVC)
-        target_compile_options(${PROJECT_NAME} PRIVATE 
+        target_compile_options(${PROJECT_NAME} PRIVATE
             /MP # Enable multi-processor compilation
             $<$<CONFIG:RelWithDebInfo>:/O2> # Force highest optimization for RelWithDebInfo
         )
@@ -188,9 +191,7 @@ if(WIN32)
         dxgi
         dxguid
         dxcompiler # No d3dcompiler since we only use DXC
-        
         DirectXTex::DirectXTex
-        
         # Windows system libraries
         kernel32
         advapi32
@@ -204,8 +205,14 @@ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${ALL_RENDERER_FILES})
 source_group(TREE "${GLREMIX_SHARED_DIR}" PREFIX "shared" FILES ${SHARED_HEADERS} ${SHARED_SOURCES})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/shaders" PREFIX "shaders" FILES ${SHADER_FILES})
 
+set(EXTERNAL_SOURCE_FILES ${D3D12MA_SOURCES} ${IMGUI_SOURCES} ${FASTGLTF_SOURCES})
+source_group(TREE "${REPO_ROOT}/external" PREFIX "external" FILES ${EXTERNAL_SOURCE_FILES})
+
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "resource" FILES ${GLREMIX_RENDERER_RESOURCE_FILES})
+
 # Exclude shader files from build
 set_source_files_properties(${SHADER_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
+set_source_files_properties(${GLREMIX_RENDERER_RESOURCE_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
 
 set(_GLREMIX_SHIM_TARGET_PREFIX "${GLREMIX_SHIM_TARGET_PREFIX}")
 if(NOT _GLREMIX_SHIM_TARGET_PREFIX)
@@ -237,7 +244,7 @@ if(GLREMIX_DEPLOY_DIR)
         COMMAND ${CMAKE_COMMAND} -E echo "Copying shader files to ${_GLREMIX_RENDERER_DEPLOY_CONFIG_DIR}/shaders"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${_GLREMIX_RENDERER_DEPLOY_CONFIG_DIR}/shaders"
         COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_CURRENT_BINARY_DIR}/shaders"
-            "${_GLREMIX_RENDERER_DEPLOY_CONFIG_DIR}/shaders"
+        "${CMAKE_CURRENT_BINARY_DIR}/shaders"
+        "${_GLREMIX_RENDERER_DEPLOY_CONFIG_DIR}/shaders"
     )
 endif()
