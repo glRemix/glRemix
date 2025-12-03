@@ -427,7 +427,7 @@ void glRemix::glRemixRenderer::create()
         m_context.create_buffer(scratch_buffer_desc, &m_scratch_space, "BLAS scratch space"));
 
     dx::BufferDesc instance_buffer_desc{
-        .size = sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * 1024,
+        .size = sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * 4096,
         .stride = sizeof(D3D12_RAYTRACING_INSTANCE_DESC),
         .visibility = dx::CPU | dx::GPU,
     };
