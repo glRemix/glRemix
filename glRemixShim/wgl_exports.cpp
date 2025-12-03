@@ -6,7 +6,7 @@
 
 // This .inl defines the wrappers for each WGL function using the macros in export_macros.h
 // The wrapper tries to call the hook if it exists, otherwise reports missing function
-#include "wgl_wrappers.inl"
+#include "generated/wgl_wrappers.inl"
 #include "undef_export_macros.h"
 
 // Custom implementation of wglGetProcAddress to return our hooked functions

@@ -175,6 +175,19 @@ void DebugWindow::render_settings()
         ImGui::EndTooltip();
     }
     ImGui::EndDisabled();
+
+    ImGui::Checkbox("Lock Perspective", &m_parameters.perspective_locked);
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+    {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+        ImGui::TextUnformatted(
+            "Force game perspective matrix. NOTE: This option is subject for deprecation.");
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
     // TODO: Reload environment map, shaders, etc
 }
 
