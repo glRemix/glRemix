@@ -12,9 +12,10 @@
 #include <memory>
 
 bool glRemix::MeshLoader::load_mesh_from_path(std::filesystem::path asset_path,
-                                  std::vector<Vertex>& out_vertices,
-                                  std::vector<UINT32>& out_indices, PendingTexture& out_texture,
-                                  XMFLOAT3& out_min_bb, XMFLOAT3& out_max_bb)
+                                              std::vector<Vertex>& out_vertices,
+                                              std::vector<UINT32>& out_indices,
+                                              PendingTexture& out_texture, XMFLOAT3& out_min_bb,
+                                              XMFLOAT3& out_max_bb)
 {
     fastgltf::Parser parser;
 
@@ -63,7 +64,7 @@ bool glRemix::MeshLoader::load_mesh_from_path(std::filesystem::path asset_path,
         if (metadata.format != target_format)
         {
             HRESULT hr = Convert(*scratch_image.GetImage(0, 0, 0), target_format,
-                                          TEX_FILTER_DEFAULT, TEX_THRESHOLD_DEFAULT, converted);
+                                 TEX_FILTER_DEFAULT, TEX_THRESHOLD_DEFAULT, converted);
 
             if (FAILED(hr))
             {
@@ -73,7 +74,7 @@ bool glRemix::MeshLoader::load_mesh_from_path(std::filesystem::path asset_path,
 
             scratch_image = std::move(converted);
         }
-        
+
         const Image* img_data = scratch_image.GetImage(0, 0, 0);
         const size_t byte_size = img_data->slicePitch;
         auto pixel_buffer = std::make_unique<uint8_t[]>(byte_size);
@@ -81,15 +82,10 @@ bool glRemix::MeshLoader::load_mesh_from_path(std::filesystem::path asset_path,
 
         out_texture.index = static_cast<UINT32>(i);
         out_texture.desc = {
-            static_cast<UINT32>(img_data->width),
-            static_cast<UINT32>(img_data->height),
-            1,
-            1,
-            DXGI_FORMAT_R8G8B8A8_UNORM,
-            D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-            false
+            static_cast<UINT32>(img_data->width), static_cast<UINT32>(img_data->height), 1,    1,
+            DXGI_FORMAT_R8G8B8A8_UNORM,           D3D12_RESOURCE_DIMENSION_TEXTURE2D,    false
         };
-        out_texture.pixels = pixel_buffer.get();
+        // out_texture.pixels = pixel_buffer.get();
 
         m_owned_texture_buffers.emplace_back(std::move(pixel_buffer));
     }

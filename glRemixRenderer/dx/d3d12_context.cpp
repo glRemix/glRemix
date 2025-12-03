@@ -582,7 +582,11 @@ bool D3D12Context::copy_to_texture(ID3D12GraphicsCommandList7* cmd_list, const v
 
         const auto mip_width = std::max(1u, texture->desc.width >> mip);
         const auto mip_height = std::max(1u, texture->desc.height >> mip);
-        const auto mip_depth = std::max<UINT>(1u, texture->desc.depth_or_array_size >> mip);
+        // For 3D textures, depth varies per mip. For arrays/cubemaps, always 1 (one 2D slice per
+        // subresource)
+        const auto mip_depth = desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D
+                                   ? std::max<UINT>(1u, texture->desc.depth_or_array_size >> mip)
+                                   : 1u;
 
         const auto bytes_per_row = mip_width * bpp;
 
@@ -605,7 +609,7 @@ bool D3D12Context::copy_to_texture(ID3D12GraphicsCommandList7* cmd_list, const v
             }
         }
 
-        offset += bytes_per_row * mip_height;
+        offset += bytes_per_row * mip_height * mip_depth;
     }
 
     unmap_buffer(staging);
@@ -1098,8 +1102,9 @@ void D3D12Context::create_unordered_access_view_texture(const D3D12Texture& text
                                         cpu_handle);
 }
 
-void glRemix::dx::D3D12Context::create_shader_resource_view_texture(
-    const D3D12Texture& texture, const DXGI_FORMAT format, const D3D12Descriptor& descriptor) const
+void D3D12Context::create_shader_resource_view_texture(const D3D12Texture& texture,
+                                                       const DXGI_FORMAT format,
+                                                       const D3D12Descriptor& descriptor) const
 {
     D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle{};
     descriptor.heap->get_cpu_descriptor(&cpu_handle, descriptor.offset);
@@ -1117,8 +1122,29 @@ void glRemix::dx::D3D12Context::create_shader_resource_view_texture(
     m_device->CreateShaderResourceView(texture.allocation->GetResource(), &srv_desc, cpu_handle);
 }
 
+void D3D12Context::create_shader_resource_view_texture_cube(const D3D12Texture& texture,
+                                                            const DXGI_FORMAT format,
+                                                            const D3D12Descriptor& descriptor) const
+{
+    D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle{};
+    descriptor.heap->get_cpu_descriptor(&cpu_handle, descriptor.offset);
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc{
+        .Format = format,
+        .ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE,
+        .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+        .TextureCube{
+            .MostDetailedMip = 0,
+            .MipLevels = texture.desc.mip_levels,
+            .ResourceMinLODClamp = 0.0f,
+        }
+    };
+
+    m_device->CreateShaderResourceView(texture.allocation->GetResource(), &srv_desc, cpu_handle);
+}
+
 void D3D12Context::copy_descriptors(const D3D12Descriptor& dest_start,
-                                    const D3D12Descriptor& src_start, UINT count) const
+                                    const D3D12Descriptor& src_start, const UINT count) const
 {
     D3D12_CPU_DESCRIPTOR_HANDLE dest_handle;
     dest_start.heap->get_cpu_descriptor(&dest_handle, dest_start.offset);

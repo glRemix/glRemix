@@ -8,8 +8,9 @@ struct RayGenConstantBuffer
 {
     XMFLOAT4X4 view_proj;
     XMFLOAT4X4 inv_view_proj;
-    float width;
-    float height;
+    XMUINT2 dimensions;
+    BOOL mirror_mode;
+    float mirror_threshold;
 };
 
 struct Vertex
@@ -88,4 +89,15 @@ struct RayPayload
     XMFLOAT3 normal;
     BOOL hit;
     XMFLOAT3 hit_pos;
+
+    XMFLOAT3 ray_origin;
+    XMFLOAT3 ray_dir;
+    XMFLOAT3 rx_origin;
+    XMFLOAT3 rx_dir;
+    XMFLOAT3 ry_origin;
+    XMFLOAT3 ry_dir;
+
+    UINT32 depth;
+    BOOL is_mirror;
+    XMUINT2 _padding;
 };

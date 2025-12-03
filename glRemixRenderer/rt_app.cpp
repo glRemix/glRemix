@@ -14,7 +14,85 @@
 
 #include "dx/d3d12_barrier.h"
 
+#include <DirectXTex.h>
+
 glRemix::glDriver glRemix::glRemixRenderer::sm_driver;
+
+void glRemix::glRemixRenderer::create_environment_map(ID3D12GraphicsCommandList7* cmd_list,
+                                                      const char* path)
+{
+    TextureAndDescriptor texture{};
+    std::array<float, 24> default_cubemap_pixels;
+    const void* pixels;
+
+    // This needs to stay in scope
+    ScratchImage image;
+
+    auto set_fallback_texture = [&]()
+    {
+        // Fill all 6 faces with the same blue color
+        for (size_t i = 0; i < 6; ++i)
+        {
+            default_cubemap_pixels[i * 4 + 0] = 0.392f;
+            default_cubemap_pixels[i * 4 + 1] = 0.584f;
+            default_cubemap_pixels[i * 4 + 2] = 0.929f;
+            default_cubemap_pixels[i * 4 + 3] = 1.0f;
+        }
+        texture.texture.desc = {
+            1, 1, 6, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, D3D12_RESOURCE_DIMENSION_TEXTURE2D, false
+        };
+        pixels = default_cubemap_pixels.data();
+    };
+
+    if (!path)
+    {
+        set_fallback_texture();
+    }
+    else
+    {
+        TexMetadata metadata{};
+
+        const std::wstring wpath(path, path + std::strlen(path));
+        const HRESULT hr = LoadFromDDSFile(wpath.c_str(), DDS_FLAGS_NONE, &metadata, image);
+
+        if (FAILED(hr) || !metadata.IsCubemap())
+        {
+            OutputDebugStringA("Env map: Load env from DDS file failed, using fallback\n");
+            set_fallback_texture();
+        }
+        else
+        {
+            const UINT width = static_cast<UINT>(metadata.width);
+            const UINT height = static_cast<UINT>(metadata.height);
+            const UINT16 mips = static_cast<UINT16>(metadata.mipLevels ? metadata.mipLevels : 1);
+            const UINT16 arrays = static_cast<UINT16>(metadata.arraySize);
+
+            texture.texture.desc = { width, height,          arrays,
+                                     mips,  metadata.format, D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+                                     false };
+
+            pixels = image.GetPixels();
+        }
+    }
+
+    THROW_IF_FALSE(m_context.create_texture(texture.texture.desc, D3D12_BARRIER_LAYOUT_COPY_DEST,
+                                            &texture.texture, nullptr, "env_map"));
+
+    m_texture_upload_buffers[get_frame_index()].emplace_back();
+    dx::D3D12Buffer& staging = m_texture_upload_buffers[get_frame_index()].back();
+    m_context.copy_to_texture(cmd_list, pixels, &staging, &texture.texture);
+
+    m_environment.texture = texture.texture;
+
+    if (m_environment.descriptor.offset == dx::CREATE_NEW_DESCRIPTOR)
+    {
+        THROW_IF_FALSE(m_CPU_descriptor_heap.allocate(&m_environment.descriptor));
+    }
+
+    m_context.create_shader_resource_view_texture_cube(m_environment.texture,
+                                                       m_environment.texture.desc.format,
+                                                       m_environment.descriptor);
+}
 
 void glRemix::glRemixRenderer::create_material_buffer()
 {
@@ -132,7 +210,7 @@ void glRemix::glRemixRenderer::create()
     // Create raytracing global root signature
     // TODO: Make a singular very large root signature that is used for all ray tracing pipelines
     {
-        std::array<D3D12_DESCRIPTOR_RANGE, 3> descriptor_ranges{};
+        std::array<D3D12_DESCRIPTOR_RANGE, 4> descriptor_ranges{};
 
         // TLAS at t0
         descriptor_ranges[0] = {
@@ -161,6 +239,15 @@ void glRemix::glRemixRenderer::create()
             .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
         };
 
+        // Environment map at t2
+        descriptor_ranges[3] = {
+            .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+            .NumDescriptors = 1,
+            .BaseShaderRegister = 2,
+            .RegisterSpace = 0,
+            .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
+        };
+
         // Unbounded MeshRecords array
         D3D12_DESCRIPTOR_RANGE mesh_record_range{
 
@@ -178,7 +265,7 @@ void glRemix::glRemixRenderer::create()
         {
             .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
             .DescriptorTable = {
-                .NumDescriptorRanges = 3,
+                .NumDescriptorRanges = static_cast<UINT>(descriptor_ranges.size()),
                 .pDescriptorRanges = descriptor_ranges.data(),
             },
             .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL,
@@ -468,36 +555,35 @@ void glRemix::glRemixRenderer::create_pending_textures(ID3D12GraphicsCommandList
         return;
     }
 
-    // TODO: Use static allocator
-    std::vector<dx::D3D12Texture*> textures_to_barrier;
-
-    const size_t first_new_texture_idx = m_textures.size();
-
-    for (size_t i = 0; i < state.m_pending_textures.size(); i++)
+    for (auto& kv : state.m_pending_textures)
     {
-        auto& pending = state.m_pending_textures[i];
+        PendingTexture& pending = const_cast<PendingTexture&>(
+            kv.second);  // TODO fix this constness error
+
         TextureAndDescriptor texture;
         texture.texture.desc = pending.desc;
-
-        // Create texture directly in COPY_DEST layout for the upload
         THROW_IF_FALSE(m_context.create_texture(pending.desc, D3D12_BARRIER_LAYOUT_COPY_DEST,
                                                 &texture.texture, nullptr, "texture"));
 
         m_texture_upload_buffers[get_frame_index()].emplace_back();
         dx::D3D12Buffer& staging = m_texture_upload_buffers[get_frame_index()].back();
-        m_context.copy_to_texture(cmd_list, pending.pixels, &staging, &texture.texture);
+        m_context.copy_to_texture(cmd_list, pending.pixels.data(), &staging, &texture.texture);
 
         texture.page_index = m_descriptor_pager.allocate_descriptor(m_context,
                                                                     dx::DescriptorPager::TEXTURES,
                                                                     &texture.descriptor);
         m_context.create_shader_resource_view_texture(texture.texture, pending.desc.format,
                                                       texture.descriptor);
-        m_textures.push_back(std::move(texture));
+
+        m_texture_map[pending.index] = std::move(texture);
     }
 
-    for (size_t i = first_new_texture_idx; i < m_textures.size(); i++)
+    // TODO: Use static allocator
+    std::vector<dx::D3D12Texture*> textures_to_barrier;
+    for (auto& kv : state.m_pending_textures)
     {
-        textures_to_barrier.push_back(&m_textures[i].texture);
+        auto& stored = m_texture_map[kv.second.index];
+        textures_to_barrier.push_back(&stored.texture);
     }
 
     for (auto* tex : textures_to_barrier)
@@ -822,11 +908,11 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
     std::vector<UINT32> new_indices;
     PendingTexture new_texture{};
     THROW_IF_FALSE(m_mesh_loader.load_mesh_from_path(new_asset_path_fs, new_vertices, new_indices,
-                                                new_texture, min_bb, max_bb));
+                                                     new_texture, min_bb, max_bb));
 
     // set actual index of texture and push to pending textures
     new_texture.index = static_cast<UINT32>(state.m_pending_textures.size());
-    state.m_pending_textures.push_back(std::move(new_texture));
+    // state.m_pending_textures.push_back(std::move(new_texture));
 
     // get value to scale imported mesh vertices
     std::array<float, 3> old_bb_size = { old_max_bb[0] - old_min_bb[0],
@@ -856,7 +942,7 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
     pending.indices = std::move(new_indices);
     pending.hash = new_mesh_hash;
     pending.mat_idx = static_cast<UINT32>(state.m_materials.size());
-    //pending.mat_idx = -1;
+    // pending.mat_idx = -1;
     pending.mv_idx = static_cast<UINT32>(state.m_matrix_pool.size());
     pending.replace_idx = removed_index;
 
@@ -865,7 +951,7 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
 
     // added other mesh properties
     new_mesh.mat_idx = old_mesh_mat_idx;
-    //new_mesh.mat_idx = -1;
+    // new_mesh.mat_idx = -1;
     new_mesh.mv_idx = old_mesh_mv_idx;
     new_mesh.tex_idx = new_texture.index;
     new_mesh.min_bb = min_bb;
@@ -906,6 +992,8 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
     {
         instance_descs.resize(instance_count);
     }
+
+    UINT visible_instance_count = 0;
     for (UINT i = 0; i < instance_count; i++)
     {
         const MeshRecord& mesh = state.m_meshes[i];
@@ -920,13 +1008,13 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
 
         D3D12_RAYTRACING_INSTANCE_DESC desc = mv_to_instance_desc(state.m_matrix_pool[mesh.mv_idx]);
 
-        desc.InstanceID = i;
+        desc.InstanceID = visible_instance_count;
         desc.InstanceMask = 0xFF;
         desc.InstanceContributionToHitGroupIndex = 0;
         desc.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
         desc.AccelerationStructure = blas_addr;
 
-        instance_descs[i] = desc;
+        instance_descs[visible_instance_count++] = desc;
     }
 
     if (m_tlas.instance.desc.size < sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * instance_count)
@@ -1132,14 +1220,20 @@ void glRemix::glRemixRenderer::render()
 
     // replace meshes in m_meshes if applicable
     handle_per_frame_replacement();
-    // Currently reserve TLAS, 1 UAV RT, 2 CBV
-    constexpr auto reserved_descriptor_offset = 4;
+    // Currently reserve TLAS, 1 UAV RT, 1 ENV SRV, 2 CBV
+    constexpr auto reserved_descriptor_offset = 5;
     // Update mesh records vector with global indices based off current paging status
     // This is done in place on the per frame vector of MeshRecords
     static std::vector<GPUMeshRecord> gpu_mesh_records_to_copy;
     gpu_mesh_records_to_copy.clear();
     for (auto& mesh : state.m_meshes)
     {
+        // if mesh not visible, skip
+        if (!mesh.visible)
+        {
+            continue;
+        }
+
         // InstanceID will be used to access GPUMeshRecord in shader
         GPUMeshRecord gpu_mesh;
         // Materials
@@ -1172,10 +1266,10 @@ void glRemix::glRemixRenderer::render()
         {
             gpu_mesh.tex_idx = 0xFFFFFFFFu;
 
-            if (mesh.tex_idx != 0xFFFFFFFFu && mesh.tex_idx < m_textures.size())
+            if (mesh.tex_idx != 0xFFFFFFFFu && m_texture_map.contains(mesh.tex_idx))
             {
-                auto tex_desc_offset = m_textures[mesh.tex_idx].descriptor.offset;
-                auto tex_page_index = m_textures[mesh.tex_idx].page_index;
+                auto tex_desc_offset = m_texture_map[mesh.tex_idx].descriptor.offset;
+                auto tex_page_index = m_texture_map[mesh.tex_idx].page_index;
                 auto tex_offset = m_descriptor_pager
                                       .calculate_global_offset(dx::DescriptorPager::TEXTURES,
                                                                tex_page_index);
@@ -1207,23 +1301,27 @@ void glRemix::glRemixRenderer::render()
     // Build TLAS
     build_tlas(cmd_list.Get());
 
+    // build environment map
+    std::call_once(m_create_env_once, [&]() { create_environment_map(cmd_list.Get(), m_env_path); });
+
     // Dispatch rays to UAV render target
     if (!state.m_meshes.empty())
     {
-        float fov = XM_PIDIV2;  // 90 degrees
-        float aspect = float(win_dims.x) / float(win_dims.y);
-        float nearZ = 0.1f;
-        float farZ = 1000.0f;
+        // float fov = XM_PIDIV2;  // 90 degrees
+        // float aspect = static_cast<float>(win_dims.x) / static_cast<float>(win_dims.y);
+        // float near_z = 0.1f;
+        // float far_z = 1000.0f;
 
-        //XMMATRIX proj = XMMatrixPerspectiveFovRH(fov, aspect, nearZ, farZ);
+        // XMMATRIX proj = XMMatrixPerspectiveFovRH(fov, aspect, near_z, far_z);
 
         XMMATRIX proj = XMLoadFloat4x4(&state.m_matrix_stack.top(GL_PROJECTION));
 
         XMMATRIX inv_proj = XMMatrixInverse(nullptr, proj);
 
         RayGenConstantBuffer raygen_cb{
-            .width = static_cast<float>(win_dims.x),
-            .height = static_cast<float>(win_dims.y),
+            .dimensions = win_dims,
+            .mirror_mode = m_debug_window.m_parameters.mirror_mode,
+            .mirror_threshold = m_debug_window.m_parameters.mirror_threshold,
         };
         XMStoreFloat4x4(&raygen_cb.view_proj, XMMatrixTranspose(proj));
         XMStoreFloat4x4(&raygen_cb.inv_view_proj, XMMatrixTranspose(inv_proj));
@@ -1262,6 +1360,9 @@ void glRemix::glRemixRenderer::render()
         // Light CBV
         ++gpu_heap.offset;
         m_context.copy_descriptors(gpu_heap, m_light_buffer[get_frame_index()].descriptor, 1);
+        // Environment map
+        ++gpu_heap.offset;
+        m_context.copy_descriptors(gpu_heap, m_environment.descriptor, 1);
 
         D3D12_GPU_DESCRIPTOR_HANDLE descriptor_table_handle{};
         m_GPU_descriptor_heap.get_gpu_descriptor(&descriptor_table_handle, 0);

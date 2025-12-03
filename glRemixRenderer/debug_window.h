@@ -22,7 +22,7 @@ class DebugWindow
     std::vector<MeshRecord>* m_meshes = nullptr;
     tsl::robin_map<UINT64, MeshRecord>* m_mesh_map = nullptr;
 
-    uint64_t m_meshID_to_replace = -1;
+    uint64_t m_mesh_id_to_replace = -1;
     char m_asset_path_buffer[256] = "";
     std::function<void(uint64_t meshID, const char* asset_path)>
         m_replace_mesh_callback;  // replace_mesh function from rt_app
@@ -31,11 +31,14 @@ class DebugWindow
     void render_settings();
     void render_debug_log();
     void render_mesh_ids();
+    void render_mesh_visibility();
 
 public:
     struct
     {
         bool unlocked = false;
+        bool mirror_mode = false;
+        float mirror_threshold = 0.5f;
     } m_parameters;
 
     void render();

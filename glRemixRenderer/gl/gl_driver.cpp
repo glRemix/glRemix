@@ -1,4 +1,7 @@
 #include "gl_driver.h"
+
+#include <DirectXTex.h>
+
 #include "gl_command_utils.h"
 #include <shared/gl_utils.h>
 
@@ -107,12 +110,11 @@ static void hash_and_commit_geometry(glState& state, const size_t* client_indice
 
     if (state.m_texture_2d)
     {
-        auto& map = state.m_texture_indices;
-        auto it = map.find(state.m_texture_index);
-        if (it != map.end())
-        {
-            mesh->tex_idx = it->second;
-        }
+        mesh->tex_idx = state.m_bound_texture;
+    }
+    else
+    {
+        mesh->tex_idx = 0xFFFFFFFFu;
     }
 
     mesh->last_frame = state.m_current_frame;
@@ -491,16 +493,54 @@ static void handle_end_list(const GLCommandContext& ctx, const void* data)
 static void handle_bind_texture(const GLCommandContext& ctx, const void* data)
 {
     const auto* cmd = static_cast<const GLBindTextureCommand*>(data);
-    ctx.state.m_texture_index = cmd->texture;
+    ctx.state.m_bound_texture = cmd->texture;
 }
 
 static void handle_delete_textures(const GLCommandContext& ctx, const void* data)
 {
     const auto* cmd = static_cast<const GLDeleteTexturesCommand*>(data);
 
-    UINT32 index = ctx.state.m_texture_indices[cmd->n];
+    // the com pointer will simply be dropped
+}
 
-    // TODO (delete textures)
+static size_t compute_mip_offset(const UINT32 width, const UINT32 height, const UINT32 level,
+                                 const size_t bpp)
+{
+    size_t offset = 0;
+    UINT32 w = width;
+    UINT32 h = height;
+
+    for (UINT32 l = 0; l < level; ++l)
+    {
+        const UINT32 mip_w = std::max(1u, w);
+        const UINT32 mip_h = std::max(1u, h);
+        offset += static_cast<size_t>(mip_w) * mip_h * bpp;
+
+        w = std::max(1u, w >> 1);
+        h = std::max(1u, h >> 1);
+    }
+
+    return offset;
+}
+
+static size_t compute_total_size(const UINT32 width, const UINT32 height, const UINT32 max_level,
+                                 const size_t bpp)
+{
+    size_t total = 0;
+    UINT32 w = width;
+    UINT32 h = height;
+
+    for (UINT32 l = 0; l < max_level; ++l)
+    {
+        const UINT32 mip_w = std::max(1u, w);
+        const UINT32 mip_h = std::max(1u, h);
+        total += static_cast<size_t>(mip_w) * mip_h * bpp;
+
+        w = std::max(1u, w >> 1);
+        h = std::max(1u, h >> 1);
+    }
+
+    return total;
 }
 
 static void handle_tex_image_2d(const GLCommandContext& ctx, const void* data)
@@ -510,22 +550,104 @@ static void handle_tex_image_2d(const GLCommandContext& ctx, const void* data)
     const auto* bytes = static_cast<const UINT8*>(data);
     const void* data_ptr = bytes + sizeof(GLTexImage2DCommand);
 
-    PendingTexture tex;
-    tex.desc = { cmd->width,
-                 cmd->height,
-                 1,  // depth of array size is always 1 (gl does not support non 2d)
-                 1,
-                 gl_format_to_dxgi(cmd->internalFormat, cmd->format, cmd->type),
-                 D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-                 false };
-    tex.pixels = data_ptr;
-
     glState& state = ctx.state;
-    const UINT32 global_tex_index = state.m_num_textures
-                                    + static_cast<UINT32>(state.m_pending_textures.size());
-    state.m_texture_indices[state.m_texture_index] = global_tex_index;
 
-    state.m_pending_textures.push_back(std::move(tex));
+    PendingTexture& tex = state.m_pending_textures[state.m_bound_texture];
+    tex.index = state.m_bound_texture;
+
+    // Safe downcast as there are never that many mips
+    const auto level = static_cast<UINT16>(cmd->level);
+    const UINT32 width = cmd->width;
+    const UINT32 height = cmd->height;
+    const DXGI_FORMAT fmt = gl_format_to_dxgi(cmd->format, cmd->type);
+
+    // RGB + GL_UNSIGNED_BYTE doesn't exist so need to fill with alpha value
+    const size_t bits = BitsPerPixel(fmt);
+    assert(bits % 8 == 0);
+    const size_t dst_bpp = bits / 8;
+    const bool to_rgba = cmd->format == GL_RGB && cmd->type == GL_UNSIGNED_BYTE;
+
+    // initialize base-level desc
+    if (!tex.initialized)
+    {
+        auto base_width = width;
+        auto base_height = height;
+
+        // if first call is not level 0 infer base width
+        // Technically mips do not have to be half size of previous level, but we assume that here
+        // for sake of simplicity and performance
+        if (level > 0)
+        {
+            base_width <<= level;
+            // Technically should do below if it is a 1D texture array
+            // We don't actually have that enum in our code so can't do this check
+            // TODO: Check cmd->target
+            base_height <<= level;
+        }
+
+        // Note: glTexImage2D is either a 2D texture with mips and possibly multiple slices or a 1D
+        // texture array
+        tex.desc = {
+            .width = base_width,
+            .height = base_height,
+            .depth_or_array_size = 1,                      // We don't support texture arrays yet
+            .mip_levels = static_cast<UINT16>(level + 1),  // mip_levels (at least level+1)
+            .format = fmt,
+            .dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+            .is_render_target = false  // not render target
+        };
+
+        tex.initialized = true;
+        tex.max_level = level;
+    }
+    else
+    {
+        // Possibly added another mip level, update desc
+        tex.max_level = std::max(tex.max_level, level);
+        tex.desc.mip_levels = static_cast<UINT16>(tex.max_level + 1);
+    }
+
+    const UINT32 base_width = tex.desc.width;
+    const UINT32 base_height = tex.desc.height;
+
+    const UINT32 mip_width = std::max(1u, base_width >> level);
+    const UINT32 mip_height = std::max(1u, base_height >> level);
+
+    const size_t mip_pixel_count = static_cast<size_t>(mip_width) * static_cast<size_t>(mip_height);
+
+    const size_t total_bytes = compute_total_size(base_width, base_height, tex.max_level + 1,
+                                                  dst_bpp);
+
+    if (tex.pixels.size() < total_bytes)
+    {
+        tex.pixels.resize(total_bytes);
+    }
+
+    const size_t mip_offset = compute_mip_offset(base_width, base_height, level, dst_bpp);
+    UINT8* dst = tex.pixels.data() + mip_offset;
+
+    if (to_rgba)
+    {
+        const auto* src = static_cast<const UINT8*>(data_ptr);
+
+        for (size_t i = 0; i < mip_pixel_count; ++i)
+        {
+            const size_t src_idx = i * 3;
+            const size_t dst_idx = i * 4;
+
+            dst[dst_idx + 0] = src[src_idx + 0];
+            dst[dst_idx + 1] = src[src_idx + 1];
+            dst[dst_idx + 2] = src[src_idx + 2];
+            dst[dst_idx + 3] = 255;
+        }
+    }
+    else
+    {
+        const auto* src = static_cast<const UINT8*>(data_ptr);
+        memcpy(dst, src, mip_pixel_count * dst_bpp);
+    }
+
+    tex.index = state.m_bound_texture;
 }
 
 static void handle_tex_param(const GLCommandContext& ctx, const void* data)
