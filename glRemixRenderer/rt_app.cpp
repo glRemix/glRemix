@@ -911,8 +911,9 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
                                                      new_texture, min_bb, max_bb));
 
     // set actual index of texture and push to pending textures
-    new_texture.index = static_cast<UINT32>(state.m_pending_textures.size());
-    // state.m_pending_textures.push_back(std::move(new_texture));
+    UINT32 new_texture_idx = static_cast<UINT32>(state.m_pending_textures.size());
+    new_texture.index = new_texture_idx;
+    state.m_pending_textures.emplace(new_texture_idx, std::move(new_texture));
 
     // get value to scale imported mesh vertices
     std::array<float, 3> old_bb_size = { old_max_bb[0] - old_min_bb[0],
