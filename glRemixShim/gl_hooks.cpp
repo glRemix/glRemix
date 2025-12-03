@@ -14,10 +14,10 @@ UINT32 g_client_active_texcoord_unit = 0;
 
 GLRemixTextureUnitInterface g_texture_units[k_MAX_TEXTURE_UNITS] = {};
 
-static UINT32 g_gen_lists_count = 1;
-static UINT32 g_gen_textures_count = 1;
+UINT32 g_gen_lists_count = 1;
+UINT32 g_gen_textures_count = 1;
 
-thread_local std::array<GLRemixClientArrayInterface, NUM_CLIENT_ARRAYS> g_client_arrays = {};
+std::array<GLRemixClientArrayInterface, NUM_CLIENT_ARRAYS> g_client_arrays = {};
 UINT32 g_enabled_client_arrays_count = 0;
 
 tsl::robin_map<HDC, FakePixelFormat> g_pixel_formats = {};

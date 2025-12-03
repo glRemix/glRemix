@@ -71,6 +71,9 @@ void APIENTRY gl_multi_texcoord2fv_ARB_ovr(GLenum target, const float* v)
         return;
     }
 
+    g_texture_units[unit].texcoord[0] = v[0];
+    g_texture_units[unit].texcoord[1] = v[1];
+
     GLMultiTexCoord2fARBCommand payload{ target, v[0], v[1] };
     g_ipc.write_command(GLCommandType::GLCMD_MULTI_TEXCOORD2F_ARB, payload);
 }

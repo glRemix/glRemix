@@ -51,7 +51,7 @@ extern GLRemixTextureUnitInterface g_texture_units[];
 
 constexpr SIZE_T NUM_CLIENT_ARRAYS = static_cast<SIZE_T>(GLRemixClientArrayType::_COUNT);
 
-extern thread_local std::array<GLRemixClientArrayInterface, NUM_CLIENT_ARRAYS> g_client_arrays;
+extern std::array<GLRemixClientArrayInterface, NUM_CLIENT_ARRAYS> g_client_arrays;
 extern UINT32 g_enabled_client_arrays_count;  // count of currently enabled client arrays
 
 // Assume WGL/OpenGL not called from multiple threads
