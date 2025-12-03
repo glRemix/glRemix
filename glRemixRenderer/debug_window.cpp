@@ -1,4 +1,6 @@
 #include "debug_window.h"
+
+#include <utility>
 #include "imgui.h"
 
 using namespace glRemix;
@@ -19,19 +21,14 @@ void DebugWindow::render()
                 render_settings();
                 ImGui::EndTabItem();
             }
+            if (ImGui::BeginTabItem("Asset Replacement"))
+            {
+                render_mesh_ids();
+                ImGui::EndTabItem();
+            }
             if (ImGui::BeginTabItem("Debug Log"))
             {
                 render_debug_log();
-                ImGui::EndTabItem();
-            }
-            ImGui::EndTabBar();
-        }
-
-        if (ImGui::BeginTabBar("Asset Replacement"))
-        {
-            if (ImGui::BeginTabItem("Mesh IDs"))
-            {
-                render_mesh_ids();
                 ImGui::EndTabItem();
             }
             ImGui::EndTabBar();
@@ -55,29 +52,28 @@ void DebugWindow::set_replace_mesh_callback(
 
 void DebugWindow::render_mesh_ids()
 {
-    ImGui::Text("Asset Replacement");
-    ImGui::Text("List of Assets");
+    ImGui::Text("List of Meshes ");
 
     // render meshIDs and get selected mesh
     if (ImGui::BeginListBox("##assets"))
     {
         for (int i = 0; i < m_meshes->size(); i++)
         {
-            uint64_t meshID = (*m_meshes)[i].mesh_id;
+            const auto mesh_id = (*m_meshes)[i].mesh_id;
 
-            const bool is_selected = (m_meshID_to_replace == meshID);
+            const bool is_selected = (m_mesh_ID_to_replace == mesh_id);
             char buf[64];
-            snprintf(buf, 64, "Mesh ID: %llu", meshID);
+            snprintf(buf, 64, "Mesh ID: %llu", mesh_id);
             if (ImGui::Selectable(buf, is_selected))
             {
-                m_meshID_to_replace = meshID;
+                m_mesh_ID_to_replace = mesh_id;
             }
         }
         ImGui::EndListBox();
     }
 
     // handle asset replacement with selected mesh
-    if (m_meshID_to_replace != -1)
+    if (std::cmp_not_equal(m_mesh_ID_to_replace, -1))
     {
         ImGui::Separator();
 
@@ -90,7 +86,7 @@ void DebugWindow::render_mesh_ids()
             ImGui::Text("%s", m_asset_path_buffer);
             if (m_replace_mesh_callback)
             {
-                m_replace_mesh_callback(m_meshID_to_replace, m_asset_path_buffer);
+                m_replace_mesh_callback(m_mesh_ID_to_replace, m_asset_path_buffer);
             }
         }
     }
@@ -119,6 +115,35 @@ void DebugWindow::render_settings()
         ImGui::PopTextWrapPos();
         ImGui::EndTooltip();
     }
+
+    ImGui::Checkbox("Mirror Mode", &m_parameters.mirror_mode);
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+    {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+        ImGui::TextUnformatted("Transform random materials into perfectly specular materials");
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+
+    ImGui::BeginDisabled(!m_parameters.mirror_mode);
+    ImGui::Indent();
+    ImGui::SetNextItemWidth(200.0f);
+    ImGui::SliderFloat("##p", &m_parameters.mirror_threshold, 0.0f, 1.0f, "%.2f");
+    ImGui::Unindent();
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+    {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+        ImGui::TextUnformatted("Proportion of materials to become mirrors");
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+    ImGui::EndDisabled();
     // TODO: Reload environment map, shaders, etc
 }
 

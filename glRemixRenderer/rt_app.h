@@ -2,10 +2,6 @@
 
 #include <tsl/robin_map.h>
 #include <DirectXMath.h>
-#include <span>
-
-#include <shared/ipc_protocol.h>
-#include <shared/gl_commands.h>
 
 #include "application.h"
 #include "debug_window.h"

@@ -1287,19 +1287,21 @@ void glRemix::glRemixRenderer::render()
     // Dispatch rays to UAV render target
     if (!state.m_meshes.empty())
     {
-        float fov = XM_PIDIV2;  // 90 degrees
-        float aspect = float(win_dims.x) / float(win_dims.y);
-        float nearZ = 0.1f;
-        float farZ = 1000.0f;
+        // float fov = XM_PIDIV2;  // 90 degrees
+        // float aspect = static_cast<float>(win_dims.x) / static_cast<float>(win_dims.y);
+        // float near_z = 0.1f;
+        // float far_z = 1000.0f;
 
-        XMMATRIX proj = XMMatrixPerspectiveFovRH(fov, aspect, nearZ, farZ);
+        // XMMATRIX proj = XMMatrixPerspectiveFovRH(fov, aspect, near_z, far_z);
 
-        // XMMATRIX proj = XMLoadFloat4x4(&state.m_matrix_stack.top(GL_PROJECTION));
+        XMMATRIX proj = XMLoadFloat4x4(&state.m_matrix_stack.top(GL_PROJECTION));
 
         XMMATRIX inv_proj = XMMatrixInverse(nullptr, proj);
 
         RayGenConstantBuffer raygen_cb{
             .dimensions = win_dims,
+            .mirror_mode = m_debug_window.m_parameters.mirror_mode,
+            .mirror_threshold = m_debug_window.m_parameters.mirror_threshold,
         };
         XMStoreFloat4x4(&raygen_cb.view_proj, XMMatrixTranspose(proj));
         XMStoreFloat4x4(&raygen_cb.inv_view_proj, XMMatrixTranspose(inv_proj));
