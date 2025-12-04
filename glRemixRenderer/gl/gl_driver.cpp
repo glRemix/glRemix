@@ -79,6 +79,20 @@ static void hash_and_commit_geometry(glState& state)
     }
     else
     {
+#ifdef GLREMIX_DYNAMIC_MESH_CAP
+        // Hack to make Half Life kind of playable
+        const size_t current_total_meshes = state.m_mesh_map.size()
+                                            + state.m_pending_geometries.size();
+        const size_t mesh_cap = static_cast<size_t>(state.m_last_rendered_mesh_count
+                                                    * glState::MESH_CAP_RATIO);
+        if (state.m_last_rendered_mesh_count > 0 && current_total_meshes >= mesh_cap)
+        {
+            state.t_vertices.clear();
+            state.t_indices.clear();
+            return;
+        }
+#endif
+
         MeshRecord new_mesh;
         new_mesh.mesh_id = hash;
 

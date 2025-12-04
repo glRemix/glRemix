@@ -1025,7 +1025,8 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
 
     void* cpu_ptr;
     THROW_IF_FALSE(m_context.map_buffer(&m_tlas.instance, &cpu_ptr));
-    memcpy(cpu_ptr, instance_descs.data(), sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * valid_instance_count);
+    memcpy(cpu_ptr, instance_descs.data(),
+           sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * valid_instance_count);
     m_context.unmap_buffer(&m_tlas.instance);
 
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS tlas_desc{
@@ -1100,7 +1101,7 @@ void glRemix::glRemixRenderer::render()
 {
     // Read GL stream and set resources accordingly
     auto& state = sm_driver.get_state();
-    
+
     if (state.m_current_frame % FRAME_LENIENCY == 0)
     {
         char msg_buf[64];
@@ -1108,7 +1109,7 @@ void glRemix::glRemixRenderer::render()
         snprintf(msg_buf, sizeof(msg_buf), "Collected expired meshes: %u", f);
         dbglog_push(msg_buf);
     }
-    
+
     state.m_num_mesh_resources
         = m_mesh_resources
               .size();  // required for setting mesh record pointers properly within driver
@@ -1311,6 +1312,11 @@ void glRemix::glRemixRenderer::render()
             .num_textures = m_texture_map.size(),
         };
         m_debug_window.set_mesh_stats(mesh_stats);
+
+#ifdef GLREMIX_DYNAMIC_MESH_CAP
+        state.m_last_rendered_mesh_count = std::max(gpu_mesh_records_to_copy.size(),
+                                                    state.m_last_rendered_mesh_count);
+#endif
     }
     {
         DebugWindow::DebugInfo debug_info{
@@ -1322,8 +1328,7 @@ void glRemix::glRemixRenderer::render()
     }
 
     // build environment map
-    std::call_once(m_create_env_once, [&]
-                   { create_environment_map(cmd_list.Get(), m_env_path); });
+    std::call_once(m_create_env_once, [&] { create_environment_map(cmd_list.Get(), m_env_path); });
 
     // Dispatch rays to UAV render target
     if (!gpu_mesh_records_to_copy.empty())
