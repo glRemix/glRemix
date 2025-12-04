@@ -799,7 +799,7 @@ void glRemix::glRemixRenderer::handle_per_frame_replacement()
 
     for (auto it = m_mesh_replacement_tracker.begin(); it != m_mesh_replacement_tracker.end();)
     {
-        UINT32 index = it->first;                    // index for m_meshes
+        UINT32 index = it->first;  // index for m_meshes
 
         MeshRecord* replacement;
         replacement = &m_mesh_replacement_tracker[index];
@@ -907,8 +907,15 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
     std::vector<Vertex> new_vertices;
     std::vector<UINT32> new_indices;
     std::vector<Material> new_materials;
-    THROW_IF_FALSE(glRemix::load_mesh_from_path(new_asset_path_fs, new_vertices, new_indices,
-                                                new_materials, min_bb, max_bb));
+    PendingTexture new_texture{};
+
+    THROW_IF_FALSE(m_mesh_loader.load_mesh_from_path(new_asset_path_fs, new_vertices, new_indices,
+                                                     new_texture, min_bb, max_bb));
+
+    // set actual index of texture and push to pending textures
+    UINT32 new_texture_idx = static_cast<UINT32>(state.m_pending_textures.size());
+    new_texture.index = new_texture_idx;
+    state.m_pending_textures.emplace(new_texture_idx, std::move(new_texture));
 
     // get value to scale imported mesh vertices
     std::array old_bb_size = { old_max_bb[0] - old_min_bb[0], old_max_bb[1] - old_min_bb[1],
@@ -946,6 +953,7 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
     new_mesh.mesh_id = new_mesh_hash;
     new_mesh.mat_idx = old_mesh_mat_idx;
     new_mesh.mv_idx = old_mesh_mv_idx;
+    new_mesh.tex_idx = new_texture.index;
     new_mesh.min_bb = min_bb;
     new_mesh.max_bb = max_bb;
     new_mesh.last_frame = state.m_current_frame;
@@ -1210,7 +1218,6 @@ void glRemix::glRemixRenderer::render()
     cmd_list->RSSetViewports(1, &viewport);
     cmd_list->RSSetScissorRects(1, &scissor_rect);
 
-
     m_context.start_imgui_frame();
     {
         DebugWindow::MeshStats mesh_stats{
@@ -1229,7 +1236,6 @@ void glRemix::glRemixRenderer::render()
 
         m_debug_window.render(debug_info);
     }
-
 
     // Build all pending buffers from geometry collected in read_gl_command_stream
     create_pending_buffers(cmd_list.Get());
@@ -1354,13 +1360,10 @@ void glRemix::glRemixRenderer::render()
     m_descriptor_pager.copy_pages_to_gpu(m_context, &m_GPU_descriptor_heap,
                                          reserved_descriptor_offset);
 
-
 #ifdef GLREMIX_DYNAMIC_MESH_CAP
-        state.m_last_rendered_mesh_count = std::max(gpu_mesh_records_to_copy.size(),
-                                                    state.m_last_rendered_mesh_count);
+    state.m_last_rendered_mesh_count = std::max(gpu_mesh_records_to_copy.size(),
+                                                state.m_last_rendered_mesh_count);
 #endif
-
-    
 
     // build environment map
     std::call_once(m_create_env_once, [&] { create_environment_map(cmd_list.Get(), m_env_path); });
