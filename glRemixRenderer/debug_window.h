@@ -4,6 +4,7 @@
 
 #include "structs.h"
 #include <array>
+#include <tsl/robin_map.h>
 
 namespace glRemix
 {
@@ -31,6 +32,7 @@ private:
 
     float m_fps = 0.0f;
 
+    tsl::robin_map<UINT64, MeshRecord>* m_mesh_map = nullptr;
     UINT64 m_mesh_ID_to_replace = -1;
     std::array<char, 256> m_asset_path{};
     std::function<void(UINT64 mesh_id, const char* asset_path)>
@@ -40,6 +42,7 @@ private:
     void render_settings();
     void render_debug_log();
     void render_mesh_ids(const MeshRecord* records, size_t count);
+    void render_mesh_visibility();
 
 public:
     struct
@@ -47,6 +50,7 @@ public:
         bool unlocked = false;
         bool mirror_mode = false;
         float mirror_threshold = 0.5f;
+        bool perspective_locked = false;
     } m_parameters;
 
     void render(DebugInfo debug_info);

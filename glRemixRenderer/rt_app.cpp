@@ -991,6 +991,11 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
         // Use the authoritative mesh data from mesh_map, not the stale copy in m_meshes
         const MeshRecord& mesh = state.m_mesh_map.at(mesh_copy.mesh_id);
 
+        if (!mesh.visible)
+        {
+            continue;
+        }
+
         const auto blas_addr = m_mesh_resources[mesh.blas_vb_ib_idx].blas.get_gpu_address();
         assert(blas_addr);
 
@@ -1002,8 +1007,7 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
         desc.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
         desc.AccelerationStructure = blas_addr;
 
-        instance_descs[valid_instance_count] = desc;
-        valid_instance_count++;
+        instance_descs[valid_instance_count++] = desc;
     }
 
     if (valid_instance_count == 0)
@@ -1106,7 +1110,7 @@ void glRemix::glRemixRenderer::render()
     {
         char msg_buf[64];
         auto f = collect_expired_meshes();
-        snprintf(msg_buf, sizeof(msg_buf), "Collected expired meshes: %u", f);
+        snprintf(msg_buf, sizeof(msg_buf), "INFO: Collected expired meshes: %u", f);
         dbglog_push(msg_buf);
     }
 
@@ -1235,8 +1239,13 @@ void glRemix::glRemixRenderer::render()
             continue;
         }
 
-        // Use the authoritative mesh data from mesh_map, not the stale copy in m_meshes
+        // Don't use stale copy in meshes vector
         const MeshRecord& mesh = state.m_mesh_map.at(mesh_copy.mesh_id);
+
+        if (!mesh.visible)
+        {
+            continue;
+        }
 
         // InstanceID will be used to access GPUMeshRecord in shader
         GPUMeshRecord gpu_mesh;
@@ -1269,6 +1278,7 @@ void glRemix::glRemixRenderer::render()
         // Textures
         {
             gpu_mesh.tex_idx = 0xFFFFFFFFu;
+            gpu_mesh.tex_idx_2 = 0xFFFFFFFFu;
 
             if (mesh.tex_idx != 0xFFFFFFFFu && m_texture_map.contains(mesh.tex_idx))
             {
@@ -1278,6 +1288,16 @@ void glRemix::glRemixRenderer::render()
                                       .calculate_global_offset(dx::DescriptorPager::TEXTURES,
                                                                tex_page_index);
                 gpu_mesh.tex_idx = tex_desc_offset + tex_offset + reserved_descriptor_offset;
+            }
+
+            if (mesh.tex_idx_2 != 0xFFFFFFFFu && m_texture_map.contains(mesh.tex_idx_2))
+            {
+                auto tex_desc_offset = m_texture_map[mesh.tex_idx_2].descriptor.offset;
+                auto tex_page_index = m_texture_map[mesh.tex_idx_2].page_index;
+                auto tex_offset = m_descriptor_pager
+                                      .calculate_global_offset(dx::DescriptorPager::TEXTURES,
+                                                               tex_page_index);
+                gpu_mesh.tex_idx_2 = tex_desc_offset + tex_offset + reserved_descriptor_offset;
             }
         }
         gpu_mesh_records_to_copy.push_back(gpu_mesh);
@@ -1333,16 +1353,22 @@ void glRemix::glRemixRenderer::render()
     // Dispatch rays to UAV render target
     if (!gpu_mesh_records_to_copy.empty())
     {
-        // float fov = XM_PIDIV2;  // 90 degrees
-        // float aspect = static_cast<float>(win_dims.x) / static_cast<float>(win_dims.y);
-        // float near_z = 0.1f;
-        // float far_z = 1000.0f;
-
-        // XMMATRIX proj = XMMatrixPerspectiveFovRH(fov, aspect, near_z, far_z);
-
         build_tlas(cmd_list.Get());
 
-        XMMATRIX proj = XMLoadFloat4x4(&state.m_matrix_stack.top(GL_PROJECTION));
+        XMMATRIX proj;
+        m_debug_window.m_parameters.perspective_locked = true;
+        if (m_debug_window.m_parameters.perspective_locked)
+        {
+            float fov = XM_PIDIV2;  // 90 degrees
+            float aspect = static_cast<float>(win_dims.x) / static_cast<float>(win_dims.y);
+            float near_z = 0.1f;
+            float far_z = 1000.0f;
+            proj = XMMatrixPerspectiveFovRH(fov, aspect, near_z, far_z);
+        }
+        else
+        {
+            proj = XMLoadFloat4x4(&state.m_matrix_stack.top(GL_PROJECTION));
+        }
 
         XMMATRIX inv_proj = XMMatrixInverse(nullptr, proj);
 

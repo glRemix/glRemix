@@ -29,6 +29,11 @@ void DebugWindow::render(const DebugInfo debug_info)
                 render_mesh_ids(mesh_records.records, mesh_records.count);
                 ImGui::EndTabItem();
             }
+            if (ImGui::BeginTabItem("Toggle Mesh Visibility"))
+            {
+                render_mesh_visibility();
+                ImGui::EndTabItem();
+            }
             if (ImGui::BeginTabItem("Debug Log"))
             {
                 render_debug_log();
@@ -94,6 +99,26 @@ void DebugWindow::render_mesh_ids(const MeshRecord* records, const size_t count)
     }
 }
 
+void DebugWindow::render_mesh_visibility()
+{
+    ImGui::Text("Toggle Mesh Visibility ");
+    if (ImGui::BeginListBox("##mesh_visibility"))
+    {
+        for (auto it = m_mesh_map->begin(); it != m_mesh_map->end();)
+        {
+            auto mesh_id = it->first;
+            ImGui::PushID(reinterpret_cast<void*>(mesh_id));
+            bool& visible = m_mesh_map->at(mesh_id).visible;
+            char buf[64];
+            snprintf(buf, 64, "Mesh ID: %llu", mesh_id);
+            ImGui::Checkbox(buf, &visible);
+            ImGui::PopID();
+            ++it;
+        }
+        ImGui::EndListBox();
+    }
+}
+
 void DebugWindow::render_performance_stats()
 {
     const ImGuiIO& io = ImGui::GetIO();
@@ -150,6 +175,19 @@ void DebugWindow::render_settings()
         ImGui::EndTooltip();
     }
     ImGui::EndDisabled();
+
+    ImGui::Checkbox("Lock Perspective", &m_parameters.perspective_locked);
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+    {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+        ImGui::TextUnformatted(
+            "Force game perspective matrix. NOTE: This option is subject for deprecation.");
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
     // TODO: Reload environment map, shaders, etc
 }
 

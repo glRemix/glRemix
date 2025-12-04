@@ -19,6 +19,7 @@ struct MeshRecord
     UINT32 mv_idx;  // index into model view array
     UINT32 mat_idx;
     UINT32 tex_idx;
+    UINT32 tex_idx_2;
 
     // bounding box info
     XMFLOAT3 min_bb;
@@ -26,6 +27,8 @@ struct MeshRecord
 
     // For garbage collection, last frame this mesh record was accessed
     UINT64 last_frame;
+
+    bool visible = true;  // can be toggled in the imgui
 };
 
 struct BufferAndDescriptor

@@ -125,13 +125,23 @@ static void hash_and_commit_geometry(glState& state)
 
     state.m_matrix_pool.push_back(state.m_matrix_stack.top(GL_MODELVIEW));
 
-    if (state.m_texture_2d)
+    // checks if each texture slot is enabled and the bound index at each active texture slot
+    if (state.m_enabled_textures[GL_TEXTURE0_ARB])
     {
-        mesh->tex_idx = state.m_bound_texture;
+        mesh->tex_idx = state.m_texture_binds[GL_TEXTURE0_ARB];
     }
     else
     {
         mesh->tex_idx = 0xFFFFFFFFu;
+    }
+
+    if (state.m_enabled_textures[GL_TEXTURE1_ARB])
+    {
+        mesh->tex_idx_2 = state.m_texture_binds[GL_TEXTURE1_ARB];
+    }
+    else
+    {
+        mesh->tex_idx_2 = 0xFFFFFFFFu;
     }
 
     mesh->last_frame = state.m_current_frame;
@@ -407,7 +417,8 @@ static void handle_vertex2f(const GLCommandContext& ctx, const void* data)
     const Vertex vertex{ .position = fv_to_xmf3(GLVec3f{ cmd->x, cmd->y, 0.0f }),
                          .color = ctx.state.m_color,
                          .normal = ctx.state.m_normal,
-                         .uv = ctx.state.m_uv };
+                         .uv = ctx.state.m_uv,
+                         .uv2 = ctx.state.m_uv2 };
     ctx.state.t_vertices.push_back(vertex);
 }
 
@@ -418,7 +429,8 @@ static void handle_vertex3f(const GLCommandContext& ctx, const void* data)
     const Vertex vertex{ .position = fv_to_xmf3(*cmd),
                          .color = ctx.state.m_color,
                          .normal = ctx.state.m_normal,
-                         .uv = ctx.state.m_uv };
+                         .uv = ctx.state.m_uv,
+                         .uv2 = ctx.state.m_uv2 };
     ctx.state.t_vertices.push_back(vertex);
 }
 
@@ -443,7 +455,15 @@ static void handle_normal3f(const GLCommandContext& ctx, const void* data)
 static void handle_texcoord2f(const GLCommandContext& ctx, const void* data)
 {
     const auto* cmd = static_cast<const GLTexCoord2fCommand*>(data);
-    ctx.state.m_uv = fv_to_xmf2(*cmd);
+
+    if (ctx.state.m_active_texture == GL_TEXTURE0_ARB)
+    {
+        ctx.state.m_uv = fv_to_xmf2(*cmd);
+    }
+    else if (ctx.state.m_active_texture == GL_TEXTURE1_ARB)
+    {
+        ctx.state.m_uv2 = fv_to_xmf2(*cmd);
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -510,7 +530,10 @@ static void handle_end_list(const GLCommandContext& ctx, const void* data)
 static void handle_bind_texture(const GLCommandContext& ctx, const void* data)
 {
     const auto* cmd = static_cast<const GLBindTextureCommand*>(data);
-    ctx.state.m_bound_texture = cmd->texture;
+
+    glState& state = ctx.state;
+
+    state.m_texture_binds[state.m_active_texture] = cmd->texture;
 }
 
 static void handle_delete_textures(const GLCommandContext& ctx, const void* data)
@@ -569,8 +592,10 @@ static void handle_tex_image_2d(const GLCommandContext& ctx, const void* data)
 
     glState& state = ctx.state;
 
-    PendingTexture& tex = state.m_pending_textures[state.m_bound_texture];
-    tex.index = state.m_bound_texture;
+    UINT32 bound_index = state.m_texture_binds[state.m_active_texture];
+
+    PendingTexture& tex = state.m_pending_textures[bound_index];
+    tex.index = bound_index;
 
     // Safe downcast as there are never that many mips
     const auto level = static_cast<UINT16>(cmd->level);
@@ -664,7 +689,7 @@ static void handle_tex_image_2d(const GLCommandContext& ctx, const void* data)
         memcpy(dst, src, mip_pixel_count * dst_bpp);
     }
 
-    tex.index = state.m_bound_texture;
+    tex.index = bound_index;
 }
 
 static void handle_tex_param(const GLCommandContext& ctx, const void* data)
@@ -760,10 +785,10 @@ static void handle_draw_arrays(const GLCommandContext& ctx, const void* data)
                     state.t_vertices[v_idx].color = XMFLOAT4{ f_ptr[0], f_ptr[1], f_ptr[2],
                                                               h.size > 3 ? f_ptr[3] : 1.0f };
                     break;
-
-                case GLRemixClientArrayType::TEXCOORD:
+                case GLRemixClientArrayType::TEXCOORD0:
                     state.t_vertices[v_idx].uv = XMFLOAT2{ f_ptr[0], h.size > 1 ? f_ptr[1] : 0.0f };
                     break;
+                case GLRemixClientArrayType::TEXCOORD1: break;  // TODO (Renderer Team)
 
                 default: break;
             }
@@ -833,10 +858,10 @@ static void handle_draw_elements(const GLCommandContext& ctx, const void* data)
                     state.t_vertices[v_idx].color = XMFLOAT4{ f_ptr[0], f_ptr[1], f_ptr[2],
                                                               h.size > 3 ? f_ptr[3] : 1.0f };
                     break;
-
-                case GLRemixClientArrayType::TEXCOORD:
+                case GLRemixClientArrayType::TEXCOORD0:
                     state.t_vertices[v_idx].uv = XMFLOAT2{ f_ptr[0], h.size > 1 ? f_ptr[1] : 0.0f };
                     break;
+                case GLRemixClientArrayType::TEXCOORD1: break;  // TODO (Renderer Team)
 
                 default: break;
             }
@@ -1064,11 +1089,13 @@ static void handle_materialfv(const GLCommandContext& ctx, const void* data)
 // STATE MANAGEMENT
 static void set_state(const GLCommandContext& ctx, unsigned int cap, bool value)
 {
+    glState& state = ctx.state;
+
     // light handling
     if (cap >= GL_LIGHT0 && cap <= GL_LIGHT7)
     {
         uint32_t light_index = cap - GL_LIGHT0;
-        ctx.state.m_lights[light_index].enabled = value;
+        state.m_lights[light_index].enabled = value;
         return;
     }
 
@@ -1076,12 +1103,12 @@ static void set_state(const GLCommandContext& ctx, unsigned int cap, bool value)
     {
         case GL_LIGHTING:
         {
-            ctx.state.m_lighting = value;
+            state.m_lighting = value;
             break;
         }
         case GL_TEXTURE_2D:
         {
-            ctx.state.m_texture_2d = value;
+            state.m_enabled_textures[state.m_active_texture] = value;
             break;
         }
         // TODO add support for more params when encountered (but large majority will be ignored likely)
@@ -1118,6 +1145,34 @@ static void handle_wgl_input_event(const GLCommandContext& ctx, const void* data
                                        static_cast<LPARAM>(cmd->lparam));
     }
 }
+
+// MULTITEXTURE
+static void handle_active_texture(const GLCommandContext& ctx, const void* data)
+{
+    const auto* cmd = static_cast<const GLActiveTextureARBCommand*>(data);
+
+    ctx.state.m_active_texture = cmd->texture;
+}
+
+static void handle_multi_texcoord2f(const GLCommandContext& ctx, const void* data)
+{
+    const auto* cmd = static_cast<const GLMultiTexCoord2fARBCommand*>(data);
+
+    if (cmd->target == GL_TEXTURE0_ARB)
+    {
+        ctx.state.m_uv = { cmd->s, cmd->t };
+    }
+    else if (cmd->target == GL_TEXTURE1_ARB)
+    {
+        ctx.state.m_uv2 = { cmd->s, cmd->t };
+    }
+    else
+    {
+        char buffer[256];
+        sprintf_s(buffer, "glRemixDriver - Unsupported mulittexture target: %d\n", cmd->target);
+        OutputDebugStringA(buffer);
+    }
+}
 }  // namespace glRemix
 
 void glRemix::glDriver::init_handlers()
@@ -1152,6 +1207,12 @@ void glRemix::glDriver::init_handlers()
     gl_command_handlers[static_cast<size_t>(GLCMD_TEX_PARAMETER)] = &handle_tex_param;
     gl_command_handlers[static_cast<size_t>(GLCMD_TEX_ENV_I)] = &handle_tex_envi;
     gl_command_handlers[static_cast<size_t>(GLCMD_TEX_ENV_F)] = &handle_tex_envf;
+
+    // MULTITEXTURE
+    gl_command_handlers[static_cast<size_t>(GLCMD_ACTIVE_TEXTURE_ARB)] = &handle_active_texture;
+    gl_command_handlers[static_cast<size_t>(GLCMD_MULTI_TEXCOORD2F_ARB)] = &handle_multi_texcoord2f;
+    gl_command_handlers[static_cast<size_t>(GLCMD_MULTI_TEXCOORD2FV_ARB)] = &handle_multi_texcoord2f;
+
     // CLIENT STATE
     gl_command_handlers[static_cast<size_t>(GLREMIXCMD_DRAW_ARRAYS)] = &handle_draw_arrays;
     gl_command_handlers[static_cast<size_t>(GLREMIXCMD_DRAW_ELEMENTS)] = &handle_draw_elements;

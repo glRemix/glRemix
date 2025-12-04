@@ -1,8 +1,8 @@
 # Deploy script for shim
-# Usage: cmake -Dbuild_dir=<path> -Dconfig=<config> -Doutput_dir=<path> -P deploy_shim.cmake
+# Usage: cmake -DGLREMIX_EXTERNAL_BINARY_DIR=<path> -Dconfig=<config> -Doutput_dir=<path> -P deploy_shim.cmake
 
-if(NOT DEFINED build_dir)
-    message(FATAL_ERROR "build_dir not defined")
+if(NOT DEFINED GLREMIX_EXTERNAL_BINARY_DIR)
+    message(FATAL_ERROR "GLREMIX_EXTERNAL_BINARY_DIR not defined")
 endif()
 
 if(NOT DEFINED config)
@@ -13,10 +13,10 @@ if(NOT DEFINED output_dir)
     message(FATAL_ERROR "output_dir not defined")
 endif()
 
-set(shim_dll "${build_dir}/${config}/opengl32.dll")
-set(shim_pdb "${build_dir}/${config}/opengl32.pdb")
+set(shim_dll "${GLREMIX_EXTERNAL_BINARY_DIR}/${config}/opengl32.dll")
+set(shim_pdb "${GLREMIX_EXTERNAL_BINARY_DIR}/${config}/opengl32.pdb")
 
-message(STATUS "Deploying shim from ${build_dir}/${config}")
+message(STATUS "Deploying shim from ${GLREMIX_EXTERNAL_BINARY_DIR}/${config}")
 message(STATUS "  DLL: ${shim_dll}")
 message(STATUS "  PDB: ${shim_pdb}")
 message(STATUS "  Destination: ${output_dir}")
