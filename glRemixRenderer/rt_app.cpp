@@ -881,7 +881,7 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
                                                &resource.vertex_buffer.descriptor);
             m_descriptor_pager.free_descriptor(dx::DescriptorPager::VB_IB,
                                                &resource.index_buffer.descriptor);
-            it = state.m_mesh_map.erase(it);
+            state.m_mesh_map.erase(it);
 
             // erase mesh from m_meshes and get its index for m_mesh_replacement_tracker
             auto it2 = std::find_if(state.m_meshes.begin(), state.m_meshes.end(),
@@ -945,6 +945,7 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
                               + state.m_pending_geometries.size();
 
     // added other mesh properties
+    new_mesh.mesh_id = static_cast<UINT32>(new_mesh_hash);  // Set mesh_id to the hash (truncated to UINT32)
     new_mesh.mat_idx = old_mesh_mat_idx;
     new_mesh.mv_idx = old_mesh_mv_idx;
     new_mesh.min_bb = min_bb;

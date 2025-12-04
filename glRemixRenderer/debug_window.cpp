@@ -21,14 +21,9 @@ void DebugWindow::render()
                 render_settings();
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("Asset Replacement"))
+            if (ImGui::BeginTabItem("Asset List"))
             {
                 render_mesh_ids();
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Toggle Mesh Visibility"))
-            {
-                render_mesh_visibility();
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Debug Log"))
@@ -39,6 +34,7 @@ void DebugWindow::render()
             ImGui::EndTabBar();
         }
     }
+    render_mesh_options_window();
     ImGui::End();
 }
 
@@ -59,7 +55,7 @@ void DebugWindow::set_replace_mesh_callback(
 
 void DebugWindow::render_mesh_ids()
 {
-    ImGui::Text("List of Meshes ");
+    ImGui::Text("List of Assets - Double Click for Asset Options");
 
     // render meshIDs and get selected mesh
     if (ImGui::BeginListBox("##assets"))
@@ -71,56 +67,72 @@ void DebugWindow::render_mesh_ids()
 
             const bool is_selected = (m_mesh_ID_to_replace == mesh_id);
             char buf[64];
-            snprintf(buf, 64, "Mesh ID: %llu", mesh_id);
+            snprintf(buf, 64, "Asset ID: %llu", mesh_id);
+
             if (ImGui::Selectable(buf, is_selected))
             {
                 m_mesh_ID_to_replace = mesh_id;
             }
 
+            // for mesh options window
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
+            {
+                m_selected_mesh_for_window = mesh_id;
+            }
+
             ++it;
         }
         ImGui::EndListBox();
     }
 
-    // handle asset replacement with selected mesh
-    if (std::cmp_not_equal(m_mesh_ID_to_replace, -1))
-    {
-        ImGui::Separator();
-
-        // get new asset path from user input
-        ImGui::InputText("Replacement Asset Path", m_asset_path_buffer, sizeof(m_asset_path_buffer));
-
-        // if button is pressed to replace asset, call replace_mesh from rt_app
-        if (ImGui::Button("Replace Asset"))
-        {
-            ImGui::Text("%s", m_asset_path_buffer);
-            if (m_replace_mesh_callback)
-            {
-                m_replace_mesh_callback(m_mesh_ID_to_replace, m_asset_path_buffer);
-            }
-        }
-    }
 }
 
-void DebugWindow::render_mesh_visibility()
+void DebugWindow::render_mesh_options_window()
 {
-    ImGui::Text("Toggle Mesh Visibility ");
-    if (ImGui::BeginListBox("##mesh_visibility"))
+    if (m_selected_mesh_for_window == static_cast<uint64_t>(-1))
     {
-        for (auto it = m_mesh_map->begin(); it != m_mesh_map->end();)
-        {
-            auto mesh_id = it->first;
-            auto& mesh = it->second;
-            ImGui::PushID((void*)(uintptr_t)mesh_id);
-            bool& visible = m_mesh_map->at(mesh_id).visible;
-            char buf[64];
-            snprintf(buf, 64, "Mesh ID: %llu", mesh_id);
-            ImGui::Checkbox(buf, &visible);
-            ImGui::PopID();
-            ++it;
-        }
-        ImGui::EndListBox();
+        return;
     }
+
+    // check if mesh still exists in map
+    if (!m_mesh_map->contains(m_selected_mesh_for_window))
+    {
+        m_selected_mesh_for_window = static_cast<uint64_t>(-1);
+        return;
+    }
+
+    char title[64];
+    snprintf(title, sizeof(title), "Asset Options: %llu", m_selected_mesh_for_window);
+
+    ImGui::Begin(title, nullptr, 0);
+
+    auto& mesh = m_mesh_map->at(m_selected_mesh_for_window);
+
+    // visibility toggle option
+    ImGui::Checkbox("Visible", &mesh.visible);
+
+    ImGui::Separator();
+
+    ImGui::Text("Asset Replacement - Path to New GLTF File:");
+    ImGui::InputText("##ReplacementPath", m_asset_path_buffer, sizeof(m_asset_path_buffer));
+
+    if (ImGui::Button("Replace Asset"))
+    {
+        if (m_replace_mesh_callback)
+        {
+            m_replace_mesh_callback(m_selected_mesh_for_window, m_asset_path_buffer);
+        }
+    }
+
+    ImGui::Separator();
+
+    // close window button
+    if (ImGui::Button("Close"))
+    {
+        m_selected_mesh_for_window = static_cast<uint64_t>(-1);
+    }
+
+    ImGui::End();
 }
 
 void DebugWindow::render_performance_stats()

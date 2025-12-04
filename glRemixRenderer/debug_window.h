@@ -27,11 +27,13 @@ class DebugWindow
     std::function<void(uint64_t meshID, const char* asset_path)>
         m_replace_mesh_callback;  // replace_mesh function from rt_app
 
+    uint64_t m_selected_mesh_for_window = static_cast<uint64_t>(-1);
+
     void render_performance_stats();
     void render_settings();
     void render_debug_log();
     void render_mesh_ids();
-    void render_mesh_visibility();
+    void render_mesh_options_window();
 
 public:
     struct
