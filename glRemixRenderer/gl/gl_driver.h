@@ -62,4 +62,6 @@ public:
     glDriver();
     ~glDriver() = default;
 };
+
+UINT64 compute_mesh_hash(const std::vector<Vertex>& vertices, const std::vector<UINT32>& indices);
 }  // namespace glRemix

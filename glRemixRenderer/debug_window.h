@@ -1,39 +1,52 @@
 #pragma once
 
-#include <imgui.h>
-#include <vector>
 #include <functional>
-#include <string>
-
-#include "application.h"
-#include "dx/d3d12_as.h"
-#include "gl/gl_matrix_stack.h"
-#include <DirectXMath.h>
 
 #include "structs.h"
-#include "tsl/robin_map.h"
+#include <array>
+#include <tsl/robin_map.h>
 
 namespace glRemix
 {
 class DebugWindow
 {
+public:
+    struct MeshStats
+    {
+        size_t num_meshes_rendered;
+        size_t num_meshes;
+        size_t num_textures;
+    };
+
+    struct DebugInfo
+    {
+        struct
+        {
+            MeshRecord* records;
+            size_t count;
+        } mesh_records;  // Array for replacement
+
+        tsl::robin_map<UINT64, MeshRecord>* m_mesh_map = nullptr;
+    };
+
+private:
+    MeshStats m_mesh_stats{};
+
     float m_fps = 0.0f;
 
-    std::vector<MeshRecord>* m_meshes = nullptr;
-    tsl::robin_map<UINT64, MeshRecord>* m_mesh_map = nullptr;
-
-    uint64_t m_mesh_ID_to_replace = -1;
+    // tsl::robin_map<UINT64, MeshRecord>* m_mesh_map = nullptr;
+    UINT64 m_mesh_ID_to_replace = -1;
     char m_asset_path_buffer[256] = "";
-    std::function<void(uint64_t meshID, const char* asset_path)>
+    std::function<void(UINT64 mesh_id, const char* asset_path)>
         m_replace_mesh_callback;  // replace_mesh function from rt_app
 
-    uint64_t m_selected_mesh_for_window = static_cast<uint64_t>(-1);
+    UINT64 m_selected_mesh_for_window = -1;
 
     void render_performance_stats();
     void render_settings();
     void render_debug_log();
-    void render_mesh_ids();
-    void render_mesh_options_window();
+    void render_mesh_ids(const MeshRecord* records, size_t count);
+    void render_mesh_options_window(tsl::robin_map<UINT64, MeshRecord>* m_mesh_map);
 
 public:
     struct
@@ -44,11 +57,10 @@ public:
         bool perspective_locked = false;
     } m_parameters;
 
-    void render();
+    void render(DebugInfo debug_info);
 
-    void set_mesh_buffer(std::vector<MeshRecord>& meshes,
-                         tsl::robin_map<UINT64, MeshRecord>& mesh_map);
     void set_replace_mesh_callback(
-        std::function<void(uint64_t meshID, const char* asset_path)> callback);
+        std::function<void(UINT64 mesh_id, const char* asset_path)> callback);
+    void set_mesh_stats(const MeshStats& mesh_stats);
 };
 }  // namespace glRemix

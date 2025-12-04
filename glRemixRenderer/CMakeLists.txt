@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(ENABLE_GPU_BASED_VALIDATION "Enable GPU-based validation for debugging" OFF)
+option(GLREMIX_DYNAMIC_MESH_CAP "Enable dynamic mesh cap to throttle mesh creation. This may cause incorrect visual output and performance issues" OFF)
 
 set(GLREMIX_SHARED_DIR "${REPO_ROOT}/shared")
 include("${REPO_ROOT}/cmake/shared_files.cmake")
@@ -31,6 +32,7 @@ set(RENDERER_SOURCES
     "rt_app.cpp"
     "debug_window.cpp"
     "mesh_loader.cpp"
+    "debug_log.cpp"
 )
 
 set(RENDERER_HEADERS
@@ -60,6 +62,7 @@ set(RENDERER_HEADERS
     "rt_app.h"
     "debug_window.h"
     "mesh_loader.h"
+    "debug_log.h"
 )
 
 set(D3D12MA_SOURCES
@@ -169,6 +172,10 @@ if(WIN32)
         target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_GPU_BASED_VALIDATION)
     endif()
 
+    if(GLREMIX_DYNAMIC_MESH_CAP)
+        target_compile_definitions(${PROJECT_NAME} PRIVATE GLREMIX_DYNAMIC_MESH_CAP)
+    endif()
+    
     if(MSVC)
         target_compile_options(${PROJECT_NAME} PRIVATE
             /MP # Enable multi-processor compilation

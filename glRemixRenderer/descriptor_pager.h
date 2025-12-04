@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <deque>
 
 #include <dx/d3d12_descriptor_heap.h>
 #include <dx/d3d12_context.h>
@@ -24,7 +25,8 @@ public:
 
 private:
     // CPU descriptor heaps
-    std::array<std::vector<D3D12DescriptorHeap>, END> m_pages{};
+    // Use deque instead of vector to ensure pointer stability
+    std::array<std::deque<D3D12DescriptorHeap>, END> m_pages{};
 
 #define PAGE_CATEGORIES 4
 

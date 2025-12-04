@@ -10,7 +10,38 @@ LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARA
 
 namespace glRemix
 {
-static void hash_and_commit_geometry(glState& state, const size_t* client_indices = nullptr)
+UINT64 compute_mesh_hash(const std::vector<Vertex>& vertices, const std::vector<UINT32>& indices)
+{
+    size_t seed = 0;
+    auto hash_combine = [&seed](auto const& v)
+    {
+        seed ^= std::hash<std::decay_t<decltype(v)>>{}(v) + 0x9e3779b97f4a7c15ULL + (seed << 6)
+                + (seed >> 2);
+    };
+
+    auto quantize = [](const float v, const float precision = 1e-5f) -> float
+    { return std::round(v / precision) * precision; };
+
+    for (int i = 0; i < vertices.size(); ++i)
+    {
+        const Vertex& vertex = vertices[i];
+        hash_combine(quantize(vertex.position.x));
+        hash_combine(quantize(vertex.position.y));
+        hash_combine(quantize(vertex.position.z));
+        hash_combine(quantize(vertex.color.x));
+        hash_combine(quantize(vertex.color.y));
+        hash_combine(quantize(vertex.color.z));
+    }
+
+    for (int i = 0; i < indices.size(); ++i)
+    {
+        hash_combine(indices[i]);
+    }
+
+    return seed;
+}
+
+static void hash_and_commit_geometry(glState& state)
 {
     if (!state.m_perspective || state.t_indices.empty())
     {
@@ -20,32 +51,13 @@ static void hash_and_commit_geometry(glState& state, const size_t* client_indice
     }
 
     // bounding box variables
-    XMFLOAT3 min_bb = { 100.0, 100.0, 100.0 };
-    XMFLOAT3 max_bb = { -100.0, -100.0, -100.0 };
+    XMFLOAT3 min_bb = { 100.0f, 100.0f, 100.0f };
+    XMFLOAT3 max_bb = { -100.0f, -100.0f, -100.0f };
 
-    // hashing - logic from boost::hash_combine
-    size_t seed = 0;
-    auto hash_combine = [&seed](auto const& v)
-    {
-        seed ^= std::hash<std::decay_t<decltype(v)>>{}(v) + 0x9e3779b97f4a7c15ULL + (seed << 6)
-                + (seed >> 2);
-    };
-
-    // reduces floating point instability
-    auto quantize = [](const float v, const float precision = 1e-5f) -> float
-    { return std::round(v / precision) * precision; };
-
-    // get vertex data to hash
+    // compute bounding box and hash
     for (int i = 0; i < state.t_vertices.size(); ++i)
     {
         const Vertex& vertex = state.t_vertices[i];
-        hash_combine(quantize(vertex.position.x));
-        hash_combine(quantize(vertex.position.y));
-        hash_combine(quantize(vertex.position.z));
-        hash_combine(quantize(vertex.color.x));
-        hash_combine(quantize(vertex.color.y));
-        hash_combine(quantize(vertex.color.z));
-
         // add bounding box info
         XMVECTOR p = XMLoadFloat3(&vertex.position);
         XMVECTOR minv = XMLoadFloat3(&min_bb);
@@ -58,17 +70,7 @@ static void hash_and_commit_geometry(glState& state, const size_t* client_indice
         XMStoreFloat3(&max_bb, maxv);
     }
 
-    bool use_existing = client_indices != nullptr;
-    // get index data to hash
-    for (int i = 0; i < state.t_indices.size(); ++i)
-    {
-        const uint32_t& index = use_existing ? client_indices[state.t_indices[i]]
-                                             : state.t_indices[i];
-        hash_combine(index);
-    }
-
-    // check if hash exists
-    uint64_t hash = seed;
+    auto hash = compute_mesh_hash(state.t_vertices, state.t_indices);
 
     MeshRecord* mesh;
     if (state.m_mesh_map.contains(hash))
@@ -77,7 +79,22 @@ static void hash_and_commit_geometry(glState& state, const size_t* client_indice
     }
     else
     {
+#ifdef GLREMIX_DYNAMIC_MESH_CAP
+        // Hack to make Half Life kind of playable
+        const size_t current_total_meshes = state.m_mesh_map.size()
+                                            + state.m_pending_geometries.size();
+        const size_t mesh_cap = static_cast<size_t>(state.m_last_rendered_mesh_count
+                                                    * glState::MESH_CAP_RATIO);
+        if (state.m_last_rendered_mesh_count > 0 && current_total_meshes >= mesh_cap)
+        {
+            state.t_vertices.clear();
+            state.t_indices.clear();
+            return;
+        }
+#endif
+
         MeshRecord new_mesh;
+        new_mesh.mesh_id = hash;
 
         // Store pending geometry for deferred BLAS building
         PendingGeometry pending;
@@ -108,13 +125,23 @@ static void hash_and_commit_geometry(glState& state, const size_t* client_indice
 
     state.m_matrix_pool.push_back(state.m_matrix_stack.top(GL_MODELVIEW));
 
-    if (state.m_texture_2d)
+    // checks if each texture slot is enabled and the bound index at each active texture slot
+    if (state.m_enabled_textures[GL_TEXTURE0_ARB])
     {
-        mesh->tex_idx = state.m_bound_texture;
+        mesh->tex_idx = state.m_texture_binds[GL_TEXTURE0_ARB];
     }
     else
     {
         mesh->tex_idx = 0xFFFFFFFFu;
+    }
+
+    if (state.m_enabled_textures[GL_TEXTURE1_ARB])
+    {
+        mesh->tex_idx_2 = state.m_texture_binds[GL_TEXTURE1_ARB];
+    }
+    else
+    {
+        mesh->tex_idx_2 = 0xFFFFFFFFu;
     }
 
     mesh->last_frame = state.m_current_frame;
@@ -390,7 +417,8 @@ static void handle_vertex2f(const GLCommandContext& ctx, const void* data)
     const Vertex vertex{ .position = fv_to_xmf3(GLVec3f{ cmd->x, cmd->y, 0.0f }),
                          .color = ctx.state.m_color,
                          .normal = ctx.state.m_normal,
-                         .uv = ctx.state.m_uv };
+                         .uv = ctx.state.m_uv,
+                         .uv2 = ctx.state.m_uv2 };
     ctx.state.t_vertices.push_back(vertex);
 }
 
@@ -401,7 +429,8 @@ static void handle_vertex3f(const GLCommandContext& ctx, const void* data)
     const Vertex vertex{ .position = fv_to_xmf3(*cmd),
                          .color = ctx.state.m_color,
                          .normal = ctx.state.m_normal,
-                         .uv = ctx.state.m_uv };
+                         .uv = ctx.state.m_uv,
+                         .uv2 = ctx.state.m_uv2 };
     ctx.state.t_vertices.push_back(vertex);
 }
 
@@ -426,7 +455,15 @@ static void handle_normal3f(const GLCommandContext& ctx, const void* data)
 static void handle_texcoord2f(const GLCommandContext& ctx, const void* data)
 {
     const auto* cmd = static_cast<const GLTexCoord2fCommand*>(data);
-    ctx.state.m_uv = fv_to_xmf2(*cmd);
+
+    if (ctx.state.m_active_texture == GL_TEXTURE0_ARB)
+    {
+        ctx.state.m_uv = fv_to_xmf2(*cmd);
+    }
+    else if (ctx.state.m_active_texture == GL_TEXTURE1_ARB)
+    {
+        ctx.state.m_uv2 = fv_to_xmf2(*cmd);
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -493,7 +530,10 @@ static void handle_end_list(const GLCommandContext& ctx, const void* data)
 static void handle_bind_texture(const GLCommandContext& ctx, const void* data)
 {
     const auto* cmd = static_cast<const GLBindTextureCommand*>(data);
-    ctx.state.m_bound_texture = cmd->texture;
+
+    glState& state = ctx.state;
+
+    state.m_texture_binds[state.m_active_texture] = cmd->texture;
 }
 
 static void handle_delete_textures(const GLCommandContext& ctx, const void* data)
@@ -552,8 +592,10 @@ static void handle_tex_image_2d(const GLCommandContext& ctx, const void* data)
 
     glState& state = ctx.state;
 
-    PendingTexture& tex = state.m_pending_textures[state.m_bound_texture];
-    tex.index = state.m_bound_texture;
+    UINT32 bound_index = state.m_texture_binds[state.m_active_texture];
+
+    PendingTexture& tex = state.m_pending_textures[bound_index];
+    tex.index = bound_index;
 
     // Safe downcast as there are never that many mips
     const auto level = static_cast<UINT16>(cmd->level);
@@ -647,7 +689,7 @@ static void handle_tex_image_2d(const GLCommandContext& ctx, const void* data)
         memcpy(dst, src, mip_pixel_count * dst_bpp);
     }
 
-    tex.index = state.m_bound_texture;
+    tex.index = bound_index;
 }
 
 static void handle_tex_param(const GLCommandContext& ctx, const void* data)
@@ -831,7 +873,7 @@ static void handle_draw_elements(const GLCommandContext& ctx, const void* data)
 
     triangulate(state);
 
-    hash_and_commit_geometry(state, client_indices.data());
+    hash_and_commit_geometry(state);
 }
 
 // MATRIX OPERATIONS
@@ -1047,11 +1089,13 @@ static void handle_materialfv(const GLCommandContext& ctx, const void* data)
 // STATE MANAGEMENT
 static void set_state(const GLCommandContext& ctx, unsigned int cap, bool value)
 {
+    glState& state = ctx.state;
+
     // light handling
     if (cap >= GL_LIGHT0 && cap <= GL_LIGHT7)
     {
         uint32_t light_index = cap - GL_LIGHT0;
-        ctx.state.m_lights[light_index].enabled = value;
+        state.m_lights[light_index].enabled = value;
         return;
     }
 
@@ -1059,12 +1103,12 @@ static void set_state(const GLCommandContext& ctx, unsigned int cap, bool value)
     {
         case GL_LIGHTING:
         {
-            ctx.state.m_lighting = value;
+            state.m_lighting = value;
             break;
         }
         case GL_TEXTURE_2D:
         {
-            ctx.state.m_texture_2d = value;
+            state.m_enabled_textures[state.m_active_texture] = value;
             break;
         }
         // TODO add support for more params when encountered (but large majority will be ignored likely)
@@ -1101,6 +1145,34 @@ static void handle_wgl_input_event(const GLCommandContext& ctx, const void* data
                                        static_cast<LPARAM>(cmd->lparam));
     }
 }
+
+// MULTITEXTURE
+static void handle_active_texture(const GLCommandContext& ctx, const void* data)
+{
+    const auto* cmd = static_cast<const GLActiveTextureARBCommand*>(data);
+
+    ctx.state.m_active_texture = cmd->texture;
+}
+
+static void handle_multi_texcoord2f(const GLCommandContext& ctx, const void* data)
+{
+    const auto* cmd = static_cast<const GLMultiTexCoord2fARBCommand*>(data);
+
+    if (cmd->target == GL_TEXTURE0_ARB)
+    {
+        ctx.state.m_uv = { cmd->s, cmd->t };
+    }
+    else if (cmd->target == GL_TEXTURE1_ARB)
+    {
+        ctx.state.m_uv2 = { cmd->s, cmd->t };
+    }
+    else
+    {
+        char buffer[256];
+        sprintf_s(buffer, "glRemixDriver - Unsupported mulittexture target: %d\n", cmd->target);
+        OutputDebugStringA(buffer);
+    }
+}
 }  // namespace glRemix
 
 void glRemix::glDriver::init_handlers()
@@ -1135,6 +1207,12 @@ void glRemix::glDriver::init_handlers()
     gl_command_handlers[static_cast<size_t>(GLCMD_TEX_PARAMETER)] = &handle_tex_param;
     gl_command_handlers[static_cast<size_t>(GLCMD_TEX_ENV_I)] = &handle_tex_envi;
     gl_command_handlers[static_cast<size_t>(GLCMD_TEX_ENV_F)] = &handle_tex_envf;
+
+    // MULTITEXTURE
+    gl_command_handlers[static_cast<size_t>(GLCMD_ACTIVE_TEXTURE_ARB)] = &handle_active_texture;
+    gl_command_handlers[static_cast<size_t>(GLCMD_MULTI_TEXCOORD2F_ARB)] = &handle_multi_texcoord2f;
+    gl_command_handlers[static_cast<size_t>(GLCMD_MULTI_TEXCOORD2FV_ARB)] = &handle_multi_texcoord2f;
+
     // CLIENT STATE
     gl_command_handlers[static_cast<size_t>(GLREMIXCMD_DRAW_ARRAYS)] = &handle_draw_arrays;
     gl_command_handlers[static_cast<size_t>(GLREMIXCMD_DRAW_ELEMENTS)] = &handle_draw_elements;
