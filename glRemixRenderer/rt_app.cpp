@@ -345,7 +345,7 @@ void glRemix::glRemixRenderer::create()
         L"RayGenMain", L"MissMain", L"ClosestHitMain",
         nullptr,  // TODO: Add Any Hit shader
         nullptr,  // TODO: Add Intersection shader if doing non-triangle geometry
-        L"ShadowMiss", nullptr);
+        L"ShadowMiss");
     rt_desc.global_root_signature = m_rt_global_root_signature.Get();
     rt_desc.max_recursion_depth = 2;
     rt_desc.payload_size = std::max(sizeof(RayPayload), sizeof(ShadowPayload));
