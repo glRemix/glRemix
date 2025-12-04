@@ -1,7 +1,6 @@
 #include "rt_app.h"
 #include "mesh_loader.h"
 
-#include <thread>
 #include <chrono>
 #include <vector>
 #include <filesystem>
@@ -15,6 +14,8 @@
 #include "dx/d3d12_barrier.h"
 
 #include <DirectXTex.h>
+
+#include "debug_log.h"
 
 glRemix::glDriver glRemix::glRemixRenderer::sm_driver;
 
@@ -317,8 +318,7 @@ void glRemix::glRemixRenderer::create()
     {
         D3D12_DESCRIPTOR_HEAP_DESC descriptor_heap_desc{
             .Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-            // 1 million is limit, stick with 100k for now
-            .NumDescriptors = 100000,
+            .NumDescriptors = 1000000,
             .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
         };
         THROW_IF_FALSE(m_context.create_descriptor_heap(descriptor_heap_desc, &m_GPU_descriptor_heap,
@@ -425,9 +425,8 @@ void glRemix::glRemixRenderer::create()
     THROW_IF_FALSE(
         m_context.create_buffer(scratch_buffer_desc, &m_scratch_space, "BLAS scratch space"));
 
-    // Start out with 128 instances/meshes
     dx::BufferDesc instance_buffer_desc{
-        .size = sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * 128,
+        .size = sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * 4096,
         .stride = sizeof(D3D12_RAYTRACING_INSTANCE_DESC),
         .visibility = dx::CPU | dx::GPU,
     };
@@ -547,12 +546,12 @@ void glRemix::glRemixRenderer::create_pending_buffers(ID3D12GraphicsCommandList7
     state.m_pending_geometries.clear();
 }
 
-void glRemix::glRemixRenderer::create_pending_textures(ID3D12GraphicsCommandList7* cmd_list)
+bool glRemix::glRemixRenderer::create_pending_textures(ID3D12GraphicsCommandList7* cmd_list)
 {
     glState& state = sm_driver.get_state();
     if (state.m_pending_textures.empty())
     {
-        return;
+        return false;
     }
 
     for (auto& kv : state.m_pending_textures)
@@ -598,6 +597,7 @@ void glRemix::glRemixRenderer::create_pending_textures(ID3D12GraphicsCommandList
     m_gfx_queue.queue->ExecuteCommandLists(1, lists.data());
 
     state.m_pending_textures.clear();
+    return true;
 }
 
 void glRemix::glRemixRenderer::build_mesh_blas_batch(std::vector<size_t> pending_indices,
@@ -787,43 +787,6 @@ static D3D12_RAYTRACING_INSTANCE_DESC mv_to_instance_desc(const XMFLOAT4X4& mv)
     return desc;
 }
 
-UINT64 glRemix::glRemixRenderer::create_hash(std::vector<Vertex> vertices,
-                                             std::vector<UINT32> indices)
-{
-    // hashing - logic from boost::hash_combine
-    size_t seed = 0;
-    auto hash_combine = [&seed](auto const& v)
-    {
-        seed ^= std::hash<std::decay_t<decltype(v)>>{}(v) + 0x9e3779b97f4a7c15ULL + (seed << 6)
-                + (seed >> 2);
-    };
-
-    // reduces floating point instability
-    auto quantize = [](float v, float precision = 1e-5f) -> float
-    { return std::round(v / precision) * precision; };
-
-    // get vertex data to hash
-    for (int i = 0; i < vertices.size(); ++i)
-    {
-        const Vertex& vertex = vertices[i];
-        hash_combine(quantize(vertex.position.x));
-        hash_combine(quantize(vertex.position.y));
-        hash_combine(quantize(vertex.position.z));
-        hash_combine(quantize(vertex.color.x));
-        hash_combine(quantize(vertex.color.y));
-        hash_combine(quantize(vertex.color.z));
-    }
-
-    // get index data to hash
-    for (int i = 0; i < indices.size(); ++i)
-    {
-        const UINT32& index = indices[i];
-        hash_combine(index);
-    }
-
-    return seed;
-}
-
 void glRemix::glRemixRenderer::handle_per_frame_replacement()
 {
     glState& state = sm_driver.get_state();
@@ -848,6 +811,36 @@ void glRemix::glRemixRenderer::handle_per_frame_replacement()
     }
 }
 
+UINT glRemix::glRemixRenderer::collect_expired_meshes()
+{
+    glState& state = sm_driver.get_state();
+
+    UINT count = 0;
+
+    for (auto it = state.m_mesh_map.begin(); it != state.m_mesh_map.end();)
+    {
+        auto& mesh = it->second;
+
+        if (state.m_current_frame > mesh.last_frame + FRAME_LENIENCY)
+        {
+            auto& resource = m_mesh_resources[mesh.blas_vb_ib_idx];
+            m_mesh_resources.free(mesh.blas_vb_ib_idx);
+            m_descriptor_pager.free_descriptor(dx::DescriptorPager::VB_IB,
+                                               &resource.vertex_buffer.descriptor);
+            m_descriptor_pager.free_descriptor(dx::DescriptorPager::VB_IB,
+                                               &resource.index_buffer.descriptor);
+
+            it = state.m_mesh_map.erase(it);
+            ++count;
+        }
+        else
+        {
+            ++it;
+        }
+    }
+    return count;
+}
+
 // replaces asset in scene based on file provided by user in ImGui
 void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset_path)
 {
@@ -855,12 +848,12 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
 
     UINT32 old_mesh_mv_idx = -1;
     UINT32 old_mesh_mat_idx = -1;
-    std::array<float, 3> old_min_bb = { 1000.0, 1000.0, 1000.0 };
-    std::array<float, 3> old_max_bb = { -1000.0, -1000.0, -1000.0 };
+    std::array old_min_bb = { 1000.0f, 1000.0f, 1000.0f };
+    std::array old_max_bb = { -1000.0f, -1000.0f, -1000.0f };
     UINT32 removed_index = -1;
 
-    XMFLOAT3 min_bb = { 1000.0, 1000.0, 1000.0 };
-    XMFLOAT3 max_bb = { -1000.0, -1000.0, -1000.0 };
+    XMFLOAT3 min_bb = { 1000.0f, 1000.0f, 1000.0f };
+    XMFLOAT3 max_bb = { -1000.0f, -1000.0f, -1000.0f };
 
     // erase mesh that needs to be replaced
     for (auto it = state.m_mesh_map.begin(); it != state.m_mesh_map.end();)
@@ -911,13 +904,11 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
                                                 new_materials, min_bb, max_bb));
 
     // get value to scale imported mesh vertices
-    std::array<float, 3> old_bb_size = { old_max_bb[0] - old_min_bb[0],
-                                         old_max_bb[1] - old_min_bb[1],
-                                         old_max_bb[2] - old_min_bb[2] };
-    std::array<float, 3> new_bb_size = { max_bb.x - min_bb.x, max_bb.y - min_bb.y,
-                                         max_bb.z - min_bb.z };
+    std::array old_bb_size = { old_max_bb[0] - old_min_bb[0], old_max_bb[1] - old_min_bb[1],
+                               old_max_bb[2] - old_min_bb[2] };
+    std::array new_bb_size = { max_bb.x - min_bb.x, max_bb.y - min_bb.y, max_bb.z - min_bb.z };
 
-    std::array<float, 3> scale_factors = { 1.0f, 1.0f, 1.0f };
+    std::array scale_factors = { 1.0f, 1.0f, 1.0f };
     for (int i = 0; i < 3; ++i)
     {
         if (new_bb_size[i] > 0.0f)
@@ -930,7 +921,7 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
     transform_replacement_vertices(new_vertices, scale_factors);
 
     // put new mesh into pending geometries
-    UINT64 new_mesh_hash = create_hash(new_vertices, new_indices);
+    UINT64 new_mesh_hash = compute_mesh_hash(new_vertices, new_indices);
     MeshRecord new_mesh;
 
     PendingGeometry pending;
@@ -970,9 +961,9 @@ void glRemix::glRemixRenderer::transform_replacement_vertices(std::vector<Vertex
 void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
 {
     const auto state = sm_driver.get_state();
-    // create an instance descriptor for all geometry
-    // TODO: Check if this truncates size_t -> UINT
-    const UINT instance_count = static_cast<UINT>(state.m_meshes.size());  // this frame's meshes
+
+    assert(!u64_overflows_u32(state.m_meshes.size()));
+    const UINT instance_count = static_cast<UINT>(state.m_meshes.size());
 
     if (instance_count == 0)
     {
@@ -986,10 +977,19 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
         instance_descs.resize(instance_count);
     }
 
-    UINT visible_instance_count = 0;
+    UINT valid_instance_count = 0;
     for (UINT i = 0; i < instance_count; i++)
     {
-        const MeshRecord& mesh = state.m_meshes[i];
+        const MeshRecord& mesh_copy = state.m_meshes[i];
+
+        // Skip meshes that have been removed from mesh_map (expired)
+        if (!state.m_mesh_map.contains(mesh_copy.mesh_id))
+        {
+            continue;
+        }
+
+        // Use the authoritative mesh data from mesh_map, not the stale copy in m_meshes
+        const MeshRecord& mesh = state.m_mesh_map.at(mesh_copy.mesh_id);
 
         if (!mesh.visible)
         {
@@ -1001,47 +1001,53 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
 
         D3D12_RAYTRACING_INSTANCE_DESC desc = mv_to_instance_desc(state.m_matrix_pool[mesh.mv_idx]);
 
-        desc.InstanceID = visible_instance_count;
+        desc.InstanceID = valid_instance_count;
         desc.InstanceMask = 0xFF;
         desc.InstanceContributionToHitGroupIndex = 0;
         desc.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
         desc.AccelerationStructure = blas_addr;
 
-        instance_descs[visible_instance_count++] = desc;
+        instance_descs[valid_instance_count++] = desc;
     }
 
-    if (m_tlas.instance.desc.size < sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * instance_count)
+    if (valid_instance_count == 0)
+    {
+        return;
+    }
+
+    if (m_tlas.instance.desc.size < sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * valid_instance_count)
     {
         dx::BufferDesc instance_buffer_desc{
-            .size = sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * instance_count,
+            .size = sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * valid_instance_count,
             .stride = sizeof(D3D12_RAYTRACING_INSTANCE_DESC),
             .visibility = dx::CPU | dx::GPU,
         };
         THROW_IF_FALSE(m_context.create_buffer(instance_buffer_desc, &m_tlas.instance,
                                                "TLAS instance buffer"));
+        dbglog_push("WARN: TLAS instance buffer recreated");
     }
 
     void* cpu_ptr;
     THROW_IF_FALSE(m_context.map_buffer(&m_tlas.instance, &cpu_ptr));
-    memcpy(cpu_ptr, instance_descs.data(), sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * instance_count);
+    memcpy(cpu_ptr, instance_descs.data(),
+           sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * valid_instance_count);
     m_context.unmap_buffer(&m_tlas.instance);
 
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS tlas_desc{
         .Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL,
         .Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE,
-        .NumDescs = instance_count,
+        .NumDescs = valid_instance_count,
         .InstanceDescs = m_tlas.instance.get_gpu_address(),
     };
 
     bool should_update = m_tlas.buffer.desc.size > 0
-                         && m_tlas.last_instance_count == instance_count;
+                         && m_tlas.last_instance_count == valid_instance_count;
 
     const auto tlas_prebuild_info = m_context.get_acceleration_structure_prebuild_info(tlas_desc);
 
     assert(tlas_prebuild_info.ScratchDataSizeInBytes < m_scratch_space.desc.size);
 
     // Only recreate buffer on first time or if too small
-    // TODO: A huge warning should be issued when this happens
     if (tlas_prebuild_info.ResultDataMaxSizeInBytes > m_tlas.buffer.desc.size)
     {
         const dx::BufferDesc tlas_buffer_desc{
@@ -1052,6 +1058,7 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
         };
         THROW_IF_FALSE(m_context.create_buffer(tlas_buffer_desc, &m_tlas.buffer, "TLAS buffer"));
         should_update = false;  // Can't update a newly created buffer
+        dbglog_push("WARN: TLAS buffer recreated");
     }
 
     if (should_update)
@@ -1059,7 +1066,7 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
         tlas_desc.Flags |= D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE;
     }
 
-    m_tlas.last_instance_count = instance_count;  // Track for next frame
+    m_tlas.last_instance_count = valid_instance_count;  // Track for next frame
 
     // Mark TLAS for build
     m_context.mark_use(&m_scratch_space, dx::Usage::UAV_COMPUTE);
@@ -1098,6 +1105,15 @@ void glRemix::glRemixRenderer::render()
 {
     // Read GL stream and set resources accordingly
     auto& state = sm_driver.get_state();
+
+    if (state.m_current_frame % FRAME_LENIENCY == 0)
+    {
+        char msg_buf[64];
+        auto f = collect_expired_meshes();
+        snprintf(msg_buf, sizeof(msg_buf), "INFO: Collected expired meshes: %u", f);
+        dbglog_push(msg_buf);
+    }
+
     state.m_num_mesh_resources
         = m_mesh_resources
               .size();  // required for setting mesh record pointers properly within driver
@@ -1124,33 +1140,24 @@ void glRemix::glRemixRenderer::render()
 
     while (state.m_materials.size() > m_material_buffers.size() * MATERIALS_PER_BUFFER)
     {
-        // TODO: Issue huge warning when this happens
         create_material_buffer();
+        dbglog_push("WARN: Allocated new material buffer");
     }
 
-    // Update material buffers every frame
-    // We iterate through buffers because we assume that materials does not shrink ever
-    for (UINT i = 0; i < m_material_buffers.size(); i++)
-    {
-        // TODO: Update material texture indices
-        // This will be tough since we don't want to do it in place
-        // Perhaps just add separate members for global index
+    const auto num_buffers_to_update = ceil_div(state.m_materials.size(), MATERIALS_PER_BUFFER);
 
+    // Update material buffers every frame
+    for (UINT64 i = 0; i < num_buffers_to_update; i++)
+    {
         const auto& mat_buffer = m_material_buffers[i][get_frame_index()];
         void* mat_ptr;
         THROW_IF_FALSE(m_context.map_buffer(&mat_buffer.buffer, &mat_ptr));
         const auto start_idx = i * MATERIALS_PER_BUFFER;
         assert(!u64_overflows_u32(state.m_materials.size()));
-        const auto end_idx = std::min(start_idx + MATERIALS_PER_BUFFER,
-                                      static_cast<UINT>(state.m_materials.size()));
+        const auto end_idx = std::min(start_idx + MATERIALS_PER_BUFFER, state.m_materials.size());
         const auto mat_count = end_idx - start_idx;
         memcpy(mat_ptr, state.m_materials.data() + start_idx, sizeof(Material) * mat_count);
         m_context.unmap_buffer(&mat_buffer.buffer);
-    }
-
-    while (state.m_meshes.size() > m_gpu_meshrecord_buffers.size() * MESHRECORDS_PER_BUFFER)
-    {
-        create_mesh_record_buffer();
     }
 
     // Update light buffer
@@ -1194,12 +1201,6 @@ void glRemix::glRemixRenderer::render()
     cmd_list->RSSetViewports(1, &viewport);
     cmd_list->RSSetScissorRects(1, &scissor_rect);
 
-    m_context.start_imgui_frame();
-
-    // render imgui
-    m_debug_window.set_mesh_buffer(state.m_meshes, state.m_mesh_map);
-    m_debug_window.render();
-
     // Build all pending buffers from geometry collected in read_gl_command_stream
     create_pending_buffers(cmd_list.Get());
     {
@@ -1208,20 +1209,39 @@ void glRemix::glRemixRenderer::render()
         THROW_IF_FALSE(m_context.create_command_list(upload_cmd_list.ReleaseAndGetAddressOf(),
                                                      m_rt_cmd_pools[get_frame_index()],
                                                      "texture upload command list"));
-        create_pending_textures(upload_cmd_list.Get());
+        if (create_pending_textures(upload_cmd_list.Get()))
+        {
+            dbglog_push("INFO: Created pending textures");
+        }
     }
 
     // replace meshes in m_meshes if applicable
     handle_per_frame_replacement();
+
+    // Mesh records get added in create_pending_buffers so this needs to happen after that
+    while (state.m_meshes.size() > m_gpu_meshrecord_buffers.size() * MESHRECORDS_PER_BUFFER)
+    {
+        create_mesh_record_buffer();
+        dbglog_push("WARN: Allocated new mesh record buffer");
+    }
+
     // Currently reserve TLAS, 1 UAV RT, 1 ENV SRV, 2 CBV
     constexpr auto reserved_descriptor_offset = 5;
     // Update mesh records vector with global indices based off current paging status
     // This is done in place on the per frame vector of MeshRecords
     static std::vector<GPUMeshRecord> gpu_mesh_records_to_copy;
     gpu_mesh_records_to_copy.clear();
-    for (auto& mesh : state.m_meshes)
+    for (auto& mesh_copy : state.m_meshes)
     {
-        // if mesh not visible, skip
+        // Skip meshes that have been removed from mesh_map (expired)
+        if (!state.m_mesh_map.contains(mesh_copy.mesh_id))
+        {
+            continue;
+        }
+
+        // Don't use stale copy in meshes vector
+        const MeshRecord& mesh = state.m_mesh_map.at(mesh_copy.mesh_id);
+
         if (!mesh.visible)
         {
             continue;
@@ -1284,7 +1304,9 @@ void glRemix::glRemixRenderer::render()
     }
 
     // Copy the processed GPU mesh records to the GPU buffers
-    for (UINT i = 0; i < m_gpu_meshrecord_buffers.size(); i++)
+    const auto gpu_meshrecord_buffers_to_update = ceil_div(gpu_mesh_records_to_copy.size(),
+                                                           MESHRECORDS_PER_BUFFER);
+    for (UINT64 i = 0; i < gpu_meshrecord_buffers_to_update; i++)
     {
         const auto& mesh_record_buffer = m_gpu_meshrecord_buffers[i][get_frame_index()];
         void* mesh_record_ptr;
@@ -1292,7 +1314,7 @@ void glRemix::glRemixRenderer::render()
         const auto start_idx = i * MESHRECORDS_PER_BUFFER;
         assert(!u64_overflows_u32(gpu_mesh_records_to_copy.size()));
         const auto end_idx = std::min(start_idx + MESHRECORDS_PER_BUFFER,
-                                      static_cast<UINT>(gpu_mesh_records_to_copy.size()));
+                                      gpu_mesh_records_to_copy.size());
         const auto mesh_record_count = end_idx - start_idx;
         memcpy(mesh_record_ptr, gpu_mesh_records_to_copy.data() + start_idx,
                sizeof(GPUMeshRecord) * mesh_record_count);
@@ -1302,15 +1324,37 @@ void glRemix::glRemixRenderer::render()
     m_descriptor_pager.copy_pages_to_gpu(m_context, &m_GPU_descriptor_heap,
                                          reserved_descriptor_offset);
 
-    // Build TLAS
-    build_tlas(cmd_list.Get());
+    m_context.start_imgui_frame();
+    {
+        DebugWindow::MeshStats mesh_stats{
+            .num_meshes_rendered = gpu_mesh_records_to_copy.size(),
+            .num_meshes = m_mesh_resources.size() - m_mesh_resources.freed_size(),
+            .num_textures = m_texture_map.size(),
+        };
+        m_debug_window.set_mesh_stats(mesh_stats);
+
+#ifdef GLREMIX_DYNAMIC_MESH_CAP
+        state.m_last_rendered_mesh_count = std::max(gpu_mesh_records_to_copy.size(),
+                                                    state.m_last_rendered_mesh_count);
+#endif
+    }
+    {
+        DebugWindow::DebugInfo debug_info{
+            // This only displays the current frames meshes
+            .mesh_records = { .records = state.m_meshes.data(), .count = state.m_meshes.size() }
+        };
+
+        m_debug_window.render(debug_info);
+    }
 
     // build environment map
-    std::call_once(m_create_env_once, [&]() { create_environment_map(cmd_list.Get(), m_env_path); });
+    std::call_once(m_create_env_once, [&] { create_environment_map(cmd_list.Get(), m_env_path); });
 
     // Dispatch rays to UAV render target
-    if (!state.m_meshes.empty())
+    if (!gpu_mesh_records_to_copy.empty())
     {
+        build_tlas(cmd_list.Get());
+
         XMMATRIX proj;
         m_debug_window.m_parameters.perspective_locked = true;
         if (m_debug_window.m_parameters.perspective_locked)
@@ -1319,7 +1363,6 @@ void glRemix::glRemixRenderer::render()
             float aspect = static_cast<float>(win_dims.x) / static_cast<float>(win_dims.y);
             float near_z = 0.1f;
             float far_z = 1000.0f;
-
             proj = XMMatrixPerspectiveFovRH(fov, aspect, near_z, far_z);
         }
         else

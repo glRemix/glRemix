@@ -16,7 +16,7 @@ namespace glRemix
 class glState
 {
 public:
-    UINT32 m_current_frame;
+    UINT64 m_current_frame;
     size_t m_offset;  // tracked by state for display list purposes
 
     HWND hwnd;
@@ -62,6 +62,11 @@ public:
     tsl::robin_map<UINT64, MeshRecord> m_mesh_map;
     UINT32 m_num_mesh_resources;
     std::vector<PendingGeometry> m_pending_geometries;
+
+#ifdef GLREMIX_DYNAMIC_MESH_CAP
+    size_t m_last_rendered_mesh_count = 0;
+    static constexpr float MESH_CAP_RATIO = 2.0f;
+#endif
 
     // textures
     bool m_texture_2d;
