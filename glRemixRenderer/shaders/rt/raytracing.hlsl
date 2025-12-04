@@ -378,6 +378,7 @@ void ClosestHitMain(inout RayPayload payload, in TriAttributes attr)
 
     // Interpolate attributes
     float2 uv = v0.uv * bary.x + v1.uv * bary.y + v2.uv * bary.z;
+    float2 uv2 = v0.uv2 * bary.x + v1.uv2 * bary.y + v2.uv2 * bary.z;
     float3 vertex_color = v0.color.rgb * bary.x + v1.color.rgb * bary.y + v2.color.rgb * bary.z;
     float3 n_obj = normalize(v0.normal * bary.x + v1.normal * bary.y + v2.normal * bary.z);
 
@@ -411,6 +412,7 @@ void ClosestHitMain(inout RayPayload payload, in TriAttributes attr)
     float3 tex_albedo = float3(1.0, 1.0, 1.0);
     
     // Fetch texture
+    float lod = 0.0;
     if (mesh.tex_idx != 0xFFFFFFFFu)
     {
         Texture2D tex = ResourceDescriptorHeap[NonUniformResourceIndex(mesh.tex_idx)];
@@ -461,7 +463,7 @@ void ClosestHitMain(inout RayPayload payload, in TriAttributes attr)
             float dudy = dUV.z;
             float dvdy = dUV.w;
 
-            float lod = lod_from_surface_differential(dudx, dvdx, dudy, dvdy, tex_mips);
+            lod = lod_from_surface_differential(dudx, dvdx, dudy, dvdy, tex_mips);
 
             float4 tex_sample = tex.SampleLevel(g_sampler, uv, lod);
             tex_albedo = tex_sample.rgb;
@@ -470,13 +472,23 @@ void ClosestHitMain(inout RayPayload payload, in TriAttributes attr)
         {
             float3 V = -normalize(WorldRayDirection());
             float dist = RayTCurrent();
-            float lod = lod_heuristic(N, V, dist);
+            lod = lod_heuristic(N, V, dist);
 
             lod = clamp(lod, 0.0f, (float) (tex_mips - 1u));
 
             float4 tex_sample = tex.SampleLevel(g_sampler, uv, lod);
             tex_albedo = tex_sample.rgb;
         }
+    }
+    
+    // multiply with second texture
+    // lod has already been calculated from above
+    if (mesh.tex_idx_2 != 0xFFFFFFFFu)
+    {
+        Texture2D tex = ResourceDescriptorHeap[NonUniformResourceIndex(mesh.tex_idx_2)];
+        
+        float4 tex_sample = tex.SampleLevel(g_sampler, uv2, lod);
+        tex_albedo *= tex_sample.rgb;
     }
     
     bool has_vertex = dot(vertex_color, vertex_color) > 1e-4;
