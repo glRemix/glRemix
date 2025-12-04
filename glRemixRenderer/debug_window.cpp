@@ -42,7 +42,7 @@ void DebugWindow::render(const DebugInfo debug_info)
 
 // get replace_mesh function from rt_app
 void DebugWindow::set_replace_mesh_callback(
-    std::function<void(uint64_t mesh_id, const char* asset_path)> callback)
+    std::function<void(UINT64 mesh_id, const char* asset_path)> callback)
 {
     m_replace_mesh_callback = callback;
 }
@@ -101,8 +101,9 @@ void DebugWindow::render_performance_stats()
 
     ImGui::Text("FPS: %.1f (%.3f ms/frame)", m_fps, 1000.0f / m_fps);
     ImGui::Separator();
-    ImGui::Text("Meshes Rendered: %zu", m_mesh_stats.num_meshes);
-    ImGui::Text("Textures: %zu", m_mesh_stats.num_textures);
+    ImGui::Text("Meshes Rendered: %zu", m_mesh_stats.num_meshes_rendered);
+    ImGui::Text("Mesh Count: %zu", m_mesh_stats.num_meshes);
+    ImGui::Text("Texture Count: %zu", m_mesh_stats.num_textures);
     // TODO: More stats like heap allocations, allocate descriptors, memory usage, etc
 }
 

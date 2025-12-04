@@ -1145,6 +1145,7 @@ void glRemix::glRemixRenderer::render()
     m_context.start_imgui_frame();
     {
         DebugWindow::MeshStats mesh_stats{
+            .num_meshes_rendered = state.m_meshes.size(),
             .num_meshes = m_mesh_resources.size() - m_mesh_resources.freed_size(),
             .num_textures = m_texture_map.size(),
         };

@@ -12,6 +12,7 @@ class DebugWindow
 public:
     struct MeshStats
     {
+        size_t num_meshes_rendered;
         size_t num_meshes;
         size_t num_textures;
     };
