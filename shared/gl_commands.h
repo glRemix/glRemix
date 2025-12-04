@@ -16,9 +16,12 @@ enum class GLCommandType : UINT32
     GLCMD_END,
     GLCMD_VERTEX2F,
     GLCMD_VERTEX3F,
+    GLCMD_VERTEX2FV,
     GLCMD_COLOR3F,
+    GLCMD_COLOR3UB,
     GLCMD_COLOR4F,
     GLCMD_NORMAL3F,
+    GLCMD_NORMAL3FV,
     GLCMD_TEXCOORD2F,
 
     // Display Lists
@@ -36,9 +39,11 @@ enum class GLCommandType : UINT32
     GLCMD_LOAD_IDENTITY,
     GLCMD_LOAD_MATRIX,
     GLCMD_MULT_MATRIX,
+    GLCMD_MULTMATRIXD,
     GLCMD_PUSH_MATRIX,
     GLCMD_POP_MATRIX,
     GLCMD_TRANSLATE,
+    GLCMD_TRANSLATED,
     GLCMD_ROTATE,
     GLCMD_SCALE,
     GLCMD_VIEWPORT,
@@ -174,9 +179,12 @@ struct GLBeginCommand
 using GLEndCommand = GLEmptyCommand;
 using GLVertex2fCommand = GLVec2f;
 using GLVertex3fCommand = GLVec3f;
+using GLVertex2fvCommand = GLVec2f;
 using GLColor3fCommand = GLVec3f;
+using GLColor3ubCommand = GLVec3f;
 using GLColor4fCommand = GLVec4f;
 using GLNormal3fCommand = GLVec3f;
+using GLNormal3fvCommand = GLVec3f;
 using GLTexCoord2fCommand = GLVec2f;
 
 /* DISPLAY LISTS */
@@ -239,6 +247,11 @@ struct GLMultMatrixCommand
     float m[16];
 };
 
+struct GLMultMatrixdCommand
+{
+    double m[16];
+};
+
 using GLLoadIdentityCommand = GLEmptyCommand;
 using GLPushMatrixCommand = GLEmptyCommand;
 using GLPopMatrixCommand = GLEmptyCommand;
@@ -246,6 +259,11 @@ using GLPopMatrixCommand = GLEmptyCommand;
 struct GLTranslateCommand
 {
     GLVec3f t;
+};
+
+struct GLTranslatedCommand
+{
+    GLVec3d t;
 };
 
 struct GLRotateCommand
