@@ -33,13 +33,15 @@ struct GraphicsPipelineDesc
         = false;  // For shader reflection: if true, increment slot for each input element
 };
 
-enum class ExportType : UINT
+enum ExportType : UINT
 {
     RAY_GEN = 0,
     MISS = 1,
     CLOSEST_HIT = 2,
     ANY_HIT = 3,
     INTERSECTION = 4,
+    SHADOW_MISS = 5,
+    SHADOW_CLOSEST_HIT = 6,
 };
 
 struct RayTracingPipelineDesc
@@ -47,12 +49,14 @@ struct RayTracingPipelineDesc
     ID3D12RootSignature* global_root_signature = nullptr;
     ID3D12RootSignature* local_root_signature = nullptr;
 
+    static constexpr UINT MAX_EXPORTS = 7;
+
     // Order matters, it follows the above enum
-    std::array<const wchar_t*, 5> export_names{};
+    std::array<const wchar_t*, MAX_EXPORTS> export_names{};
     UINT num_exports = 0;
 
     // Also follows the order of the enum
-    std::array<ID3D12RootSignature*, 5> local_root_signatures{};
+    std::array<ID3D12RootSignature*, MAX_EXPORTS> local_root_signatures{};
 
     UINT max_recursion_depth = 1;
     UINT payload_size = 0;
@@ -62,7 +66,8 @@ struct RayTracingPipelineDesc
 // Helper function to create a RayTracingPipelineDesc with proper ordering
 inline RayTracingPipelineDesc make_ray_tracing_pipeline_desc(
     const wchar_t* ray_gen_shader, const wchar_t* miss_shader, const wchar_t* closest_hit_shader,
-    const wchar_t* any_hit_shader = nullptr, const wchar_t* intersection_shader = nullptr)
+    const wchar_t* any_hit_shader = nullptr, const wchar_t* intersection_shader = nullptr,
+    const wchar_t* shadow_miss_shader = nullptr, const wchar_t* shadow_closest_hit_shader = nullptr)
 {
     RayTracingPipelineDesc desc{};
     desc.export_names[static_cast<UINT>(ExportType::RAY_GEN)] = ray_gen_shader;
@@ -70,6 +75,8 @@ inline RayTracingPipelineDesc make_ray_tracing_pipeline_desc(
     desc.export_names[static_cast<UINT>(ExportType::CLOSEST_HIT)] = closest_hit_shader;
     desc.export_names[static_cast<UINT>(ExportType::ANY_HIT)] = any_hit_shader;
     desc.export_names[static_cast<UINT>(ExportType::INTERSECTION)] = intersection_shader;
+    desc.export_names[static_cast<UINT>(ExportType::SHADOW_MISS)] = shadow_miss_shader;
+    desc.export_names[static_cast<UINT>(ExportType::SHADOW_CLOSEST_HIT)] = shadow_closest_hit_shader;
 
     // Count non-null exports
     UINT count = 0;
@@ -90,6 +97,14 @@ inline RayTracingPipelineDesc make_ray_tracing_pipeline_desc(
         count++;
     }
     if (intersection_shader)
+    {
+        count++;
+    }
+    if (shadow_miss_shader)
+    {
+        count++;
+    }
+    if (shadow_closest_hit_shader)
     {
         count++;
     }

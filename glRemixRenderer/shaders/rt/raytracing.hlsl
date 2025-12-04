@@ -8,9 +8,11 @@ RaytracingAccelerationStructure scene : register(t0);
 RWTexture2D<float4> render_target : register(u0);
 ConstantBuffer<RayGenConstantBuffer> g_raygen_cb : register(b0);
 
+#define LIGHTS_MAX_COUNT 8
+
 struct LightCB
 {
-    Light lights[8];
+    Light lights[LIGHTS_MAX_COUNT];
 };
 ConstantBuffer<LightCB> light_cb : register(b1);
 
@@ -21,6 +23,10 @@ SamplerState g_sampler : register(s0);
 
 // https://learn.microsoft.com/en-us/windows/win32/direct3d12/intersection-attributes
 typedef BuiltInTriangleIntersectionAttributes TriAttributes;
+
+// For shader table indexing
+static const uint RAY_TYPE_PRIMARY = 0;
+static const uint RAY_TYPE_SHADOW = 1;
 
 // helper functions
 float rand(uint seed)
@@ -51,45 +57,64 @@ float3 direct_lighting(float3 hit_pos, float3 N, float3 albedo)
 {
     float3 direct = 0.0f;
 
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < LIGHTS_MAX_COUNT; ++i)
     {
         Light curr_light = light_cb.lights[i];
         if (!curr_light.enabled)
             continue;
 
-        float3 light_pos = curr_light.position.xyz;
-        
-        float3 L = light_pos - hit_pos;
-        float dist = length(L);
-        L = normalize(L);
+        float3 L;
+        float dist;
+        float attenuation;
+
+        // Check if directional light or positional
+        if (curr_light.position.w == 0.0f)
+        {
+            L = normalize(curr_light.position.xyz);
+            dist = 10000.0f;
+            // Don't do attenuation for directional lights
+            attenuation = 1.0f;
+        }
+        else
+        {
+            float3 light_pos = curr_light.position.xyz;
+            L = light_pos - hit_pos;
+            dist = length(L);
+            L = normalize(L);
+
+            attenuation = 1.0f /
+                (curr_light.constant_attenuation +
+                 curr_light.linear_attenuation * dist +
+                 curr_light.quadratic_attenuation * dist * dist);
+        }
+
+        ShadowPayload shadow_payload;
+        shadow_payload.hit = true;
 
         // check if obstructed
         RayDesc shadow_ray;
         shadow_ray.Origin = hit_pos + N * 0.001f;
         shadow_ray.Direction = L;
         shadow_ray.TMin = 0.001f;
-        shadow_ray.TMax = dist - 0.001f;
-        
-        RayPayload shadow_payload;
-        shadow_payload.hit = true;
-        
-        TraceRay(scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, ~0, 0, 1, 0, shadow_ray, shadow_payload);
-        
-        if (shadow_payload.hit)
-        {
-            continue;
-        }
-        
-        // attenuation
-        float attenuation = 1.0 /
-            (curr_light.constant_attenuation +
-             curr_light.linear_attenuation * dist +
-             curr_light.quadratic_attenuation * dist * dist);
+        shadow_ray.TMax = (curr_light.position.w == 0.0f) ? 10000.0f : (dist - 0.001f);
 
-        float NdotL = max(dot(N, L), 0.0);
+        TraceRay(
+            scene,
+            RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
+            ~0,
+            RAY_TYPE_SHADOW,
+            0,
+            RAY_TYPE_SHADOW,
+            shadow_ray,
+            shadow_payload
+        );
+
+        float shadow_factor = shadow_payload.hit ? 0.0f : 1.0f;
+
+        float NdotL = max(dot(N, L), 0.0f);
 
         float3 ambient = albedo * curr_light.ambient.rgb;
-        float3 diffuse = albedo * curr_light.diffuse.rgb * NdotL;
+        float3 diffuse = albedo * curr_light.diffuse.rgb * NdotL * shadow_factor;
 
         direct += (ambient + diffuse) * attenuation;
     }
@@ -324,7 +349,7 @@ void RayGenMain()
             ray.TMin = 0.001;
             ray.TMax = 10000.0;
 
-            TraceRay(scene, RAY_FLAG_NONE, ~0, 0, 1, 0, ray, payload);
+            TraceRay(scene, RAY_FLAG_NONE, ~0, RAY_TYPE_PRIMARY, 0, RAY_TYPE_PRIMARY, ray, payload);
 
             if (!payload.hit)
             {
@@ -593,7 +618,6 @@ void ClosestHitMain(inout RayPayload payload, in TriAttributes attr)
     payload.color = float4(base, 1.0);
 }
 
-
 [shader("miss")]
 void MissMain(inout RayPayload payload)
 {
@@ -603,4 +627,10 @@ void MissMain(inout RayPayload payload)
     float intensity = 1.0f;
     payload.hit = false;
     payload.color = float4(env_color * intensity, 1.0f);
+}
+
+[shader("miss")]
+void ShadowMiss(inout ShadowPayload payload)
+{
+    payload.hit = false;
 }

@@ -1285,10 +1285,10 @@ bool D3D12Context::create_raytracing_pipeline(const RayTracingPipelineDesc& desc
 {
     assert(desc.global_root_signature);
 
-    std::array<D3D12_EXPORT_DESC, 5> exports_array{};
+    std::array<D3D12_EXPORT_DESC, RayTracingPipelineDesc::MAX_EXPORTS> exports_array{};
     {
         UINT c = 0;
-        for (UINT i = 0; i < desc.num_exports; i++)
+        for (UINT i = 0; i < desc.export_names.size(); i++)
         {
             if (desc.export_names[i])
             {
@@ -1316,9 +1316,9 @@ bool D3D12Context::create_raytracing_pipeline(const RayTracingPipelineDesc& desc
     D3D12_HIT_GROUP_DESC hg{
         .HitGroupExport = L"HG_Default",         // TODO: Option in struct for this?
         .Type = D3D12_HIT_GROUP_TYPE_TRIANGLES,  // or PROCEDURAL TODO: Add option in struct for this
-        .AnyHitShaderImport = desc.export_names[static_cast<UINT>(ExportType::ANY_HIT)],
-        .ClosestHitShaderImport = desc.export_names[static_cast<UINT>(ExportType::CLOSEST_HIT)],
-        .IntersectionShaderImport = desc.export_names[static_cast<UINT>(ExportType::INTERSECTION)],
+        .AnyHitShaderImport = desc.export_names[ANY_HIT],
+        .ClosestHitShaderImport = desc.export_names[CLOSEST_HIT],
+        .IntersectionShaderImport = desc.export_names[INTERSECTION],
     };
 
     // Define global, local root signatures
@@ -1327,7 +1327,7 @@ bool D3D12Context::create_raytracing_pipeline(const RayTracingPipelineDesc& desc
         .pDesc = reinterpret_cast<const void*>(&desc.global_root_signature),
     };
 
-    std::array<D3D12_STATE_SUBOBJECT, 5> local_rs_subobjs{};
+    std::array<D3D12_STATE_SUBOBJECT, RayTracingPipelineDesc::MAX_EXPORTS> local_rs_subobjs{};
     {
         UINT c = 0;
         for (auto& rs : desc.local_root_signatures)
@@ -1343,11 +1343,13 @@ bool D3D12Context::create_raytracing_pipeline(const RayTracingPipelineDesc& desc
     }
 
     // Associate local root signatures with their exports
-    std::array<D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION, 5> local_rs_associations{};
-    std::array<D3D12_STATE_SUBOBJECT, 5> local_rs_association_subobjs{};
+    std::array<D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION, RayTracingPipelineDesc::MAX_EXPORTS>
+        local_rs_associations{};
+    std::array<D3D12_STATE_SUBOBJECT, RayTracingPipelineDesc::MAX_EXPORTS>
+        local_rs_association_subobjs{};
     {
         UINT c = 0;
-        for (UINT i = 0; i < 5; i++)
+        for (UINT i = 0; i < RayTracingPipelineDesc::MAX_EXPORTS; i++)
         {
             if (desc.local_root_signatures[i] && desc.export_names[i])
             {
@@ -1388,7 +1390,7 @@ bool D3D12Context::create_raytracing_pipeline(const RayTracingPipelineDesc& desc
 
     // Collect all subobjects
     std::vector<D3D12_STATE_SUBOBJECT> subobjects;
-    subobjects.reserve(20);
+    subobjects.reserve(24);
 
     subobjects.push_back(lib_sub_obj);
     subobjects.push_back(hg_subobj);
@@ -1401,7 +1403,7 @@ bool D3D12Context::create_raytracing_pipeline(const RayTracingPipelineDesc& desc
         subobjects.push_back(global_rs_subobj);
     }
 
-    for (UINT i = 0; i < 5; i++)
+    for (UINT i = 0; i < RayTracingPipelineDesc::MAX_EXPORTS; i++)
     {
         if (desc.local_root_signatures[i])
         {
@@ -1410,7 +1412,7 @@ bool D3D12Context::create_raytracing_pipeline(const RayTracingPipelineDesc& desc
     }
 
     UINT num_associations = 0;
-    for (UINT i = 0; i < 5; i++)
+    for (UINT i = 0; i < RayTracingPipelineDesc::MAX_EXPORTS; i++)
     {
         if (desc.local_root_signatures[i] && desc.export_names[i])
         {

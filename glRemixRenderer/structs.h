@@ -35,14 +35,14 @@ struct BufferAndDescriptor
 {
     dx::D3D12Buffer buffer;
     dx::D3D12Descriptor descriptor;
-    UINT page_index = -1;
+    UINT page_index = ~0u;
 };
 
 struct TextureAndDescriptor
 {
     dx::D3D12Texture texture;
     dx::D3D12Descriptor descriptor;
-    UINT page_index = -1;
+    UINT page_index = ~0u;
 };
 
 struct MeshResources
@@ -59,7 +59,7 @@ struct PendingGeometry
     UINT64 hash;
     UINT32 mat_idx;
     UINT32 mv_idx;
-    UINT32 replace_idx = -1;
+    UINT32 replace_idx = ~0u;
 };
 
 struct PendingTexture
