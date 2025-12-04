@@ -811,6 +811,36 @@ void glRemix::glRemixRenderer::handle_per_frame_replacement()
     }
 }
 
+UINT glRemix::glRemixRenderer::collect_expired_meshes()
+{
+    glState& state = sm_driver.get_state();
+
+    UINT count = 0;
+
+    for (auto it = state.m_mesh_map.begin(); it != state.m_mesh_map.end();)
+    {
+        auto& mesh = it->second;
+
+        if (state.m_current_frame > mesh.last_frame + FRAME_LENIENCY)
+        {
+            auto& resource = m_mesh_resources[mesh.blas_vb_ib_idx];
+            m_mesh_resources.free(mesh.blas_vb_ib_idx);
+            m_descriptor_pager.free_descriptor(dx::DescriptorPager::VB_IB,
+                                               &resource.vertex_buffer.descriptor);
+            m_descriptor_pager.free_descriptor(dx::DescriptorPager::VB_IB,
+                                               &resource.index_buffer.descriptor);
+
+            it = state.m_mesh_map.erase(it);
+            ++count;
+        }
+        else
+        {
+            ++it;
+        }
+    }
+    return count;
+}
+
 // replaces asset in scene based on file provided by user in ImGui
 void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset_path)
 {
@@ -874,11 +904,9 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
                                                 new_materials, min_bb, max_bb));
 
     // get value to scale imported mesh vertices
-    std::array old_bb_size = { old_max_bb[0] - old_min_bb[0],
-                                         old_max_bb[1] - old_min_bb[1],
-                                         old_max_bb[2] - old_min_bb[2] };
-    std::array new_bb_size = { max_bb.x - min_bb.x, max_bb.y - min_bb.y,
-                                         max_bb.z - min_bb.z };
+    std::array old_bb_size = { old_max_bb[0] - old_min_bb[0], old_max_bb[1] - old_min_bb[1],
+                               old_max_bb[2] - old_min_bb[2] };
+    std::array new_bb_size = { max_bb.x - min_bb.x, max_bb.y - min_bb.y, max_bb.z - min_bb.z };
 
     std::array scale_factors = { 1.0f, 1.0f, 1.0f };
     for (int i = 0; i < 3; ++i)
@@ -933,9 +961,9 @@ void glRemix::glRemixRenderer::transform_replacement_vertices(std::vector<Vertex
 void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
 {
     const auto state = sm_driver.get_state();
-    // create an instance descriptor for all geometry
-    // TODO: Check if this truncates size_t -> UINT
-    const UINT instance_count = static_cast<UINT>(state.m_meshes.size());  // this frame's meshes
+
+    assert(!u64_overflows_u32(state.m_meshes.size()));
+    const UINT instance_count = static_cast<UINT>(state.m_meshes.size());
 
     if (instance_count == 0)
     {
@@ -948,28 +976,45 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
     {
         instance_descs.resize(instance_count);
     }
+
+    UINT valid_instance_count = 0;
     for (UINT i = 0; i < instance_count; i++)
     {
-        const MeshRecord& mesh = state.m_meshes[i];
+        const MeshRecord& mesh_copy = state.m_meshes[i];
+
+        // Skip meshes that have been removed from mesh_map (expired)
+        if (!state.m_mesh_map.contains(mesh_copy.mesh_id))
+        {
+            continue;
+        }
+
+        // Use the authoritative mesh data from mesh_map, not the stale copy in m_meshes
+        const MeshRecord& mesh = state.m_mesh_map.at(mesh_copy.mesh_id);
 
         const auto blas_addr = m_mesh_resources[mesh.blas_vb_ib_idx].blas.get_gpu_address();
         assert(blas_addr);
 
         D3D12_RAYTRACING_INSTANCE_DESC desc = mv_to_instance_desc(state.m_matrix_pool[mesh.mv_idx]);
 
-        desc.InstanceID = i;
+        desc.InstanceID = valid_instance_count;
         desc.InstanceMask = 0xFF;
         desc.InstanceContributionToHitGroupIndex = 0;
         desc.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
         desc.AccelerationStructure = blas_addr;
 
-        instance_descs[i] = desc;
+        instance_descs[valid_instance_count] = desc;
+        valid_instance_count++;
     }
 
-    if (m_tlas.instance.desc.size < sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * instance_count)
+    if (valid_instance_count == 0)
+    {
+        return;
+    }
+
+    if (m_tlas.instance.desc.size < sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * valid_instance_count)
     {
         dx::BufferDesc instance_buffer_desc{
-            .size = sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * instance_count,
+            .size = sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * valid_instance_count,
             .stride = sizeof(D3D12_RAYTRACING_INSTANCE_DESC),
             .visibility = dx::CPU | dx::GPU,
         };
@@ -980,18 +1025,18 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
 
     void* cpu_ptr;
     THROW_IF_FALSE(m_context.map_buffer(&m_tlas.instance, &cpu_ptr));
-    memcpy(cpu_ptr, instance_descs.data(), sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * instance_count);
+    memcpy(cpu_ptr, instance_descs.data(), sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * valid_instance_count);
     m_context.unmap_buffer(&m_tlas.instance);
 
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS tlas_desc{
         .Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL,
         .Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE,
-        .NumDescs = instance_count,
+        .NumDescs = valid_instance_count,
         .InstanceDescs = m_tlas.instance.get_gpu_address(),
     };
 
     bool should_update = m_tlas.buffer.desc.size > 0
-                         && m_tlas.last_instance_count == instance_count;
+                         && m_tlas.last_instance_count == valid_instance_count;
 
     const auto tlas_prebuild_info = m_context.get_acceleration_structure_prebuild_info(tlas_desc);
 
@@ -1016,7 +1061,7 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
         tlas_desc.Flags |= D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE;
     }
 
-    m_tlas.last_instance_count = instance_count;  // Track for next frame
+    m_tlas.last_instance_count = valid_instance_count;  // Track for next frame
 
     // Mark TLAS for build
     m_context.mark_use(&m_scratch_space, dx::Usage::UAV_COMPUTE);
@@ -1055,6 +1100,15 @@ void glRemix::glRemixRenderer::render()
 {
     // Read GL stream and set resources accordingly
     auto& state = sm_driver.get_state();
+    
+    if (state.m_current_frame % FRAME_LENIENCY == 0)
+    {
+        char msg_buf[64];
+        auto f = collect_expired_meshes();
+        snprintf(msg_buf, sizeof(msg_buf), "Collected expired meshes: %u", f);
+        dbglog_push(msg_buf);
+    }
+    
     state.m_num_mesh_resources
         = m_mesh_resources
               .size();  // required for setting mesh record pointers properly within driver
@@ -1142,24 +1196,6 @@ void glRemix::glRemixRenderer::render()
     cmd_list->RSSetViewports(1, &viewport);
     cmd_list->RSSetScissorRects(1, &scissor_rect);
 
-    m_context.start_imgui_frame();
-    {
-        DebugWindow::MeshStats mesh_stats{
-            .num_meshes_rendered = state.m_meshes.size(),
-            .num_meshes = m_mesh_resources.size() - m_mesh_resources.freed_size(),
-            .num_textures = m_texture_map.size(),
-        };
-        m_debug_window.set_mesh_stats(mesh_stats);
-    }
-    {
-        DebugWindow::DebugInfo debug_info{
-            // This only displays the current frames meshes
-            .mesh_records = { .records = state.m_meshes.data(), .count = state.m_meshes.size() }
-        };
-
-        m_debug_window.render(debug_info);
-    }
-
     // Build all pending buffers from geometry collected in read_gl_command_stream
     create_pending_buffers(cmd_list.Get());
     {
@@ -1190,8 +1226,17 @@ void glRemix::glRemixRenderer::render()
     // This is done in place on the per frame vector of MeshRecords
     static std::vector<GPUMeshRecord> gpu_mesh_records_to_copy;
     gpu_mesh_records_to_copy.clear();
-    for (auto& mesh : state.m_meshes)
+    for (auto& mesh_copy : state.m_meshes)
     {
+        // Skip meshes that have been removed from mesh_map (expired)
+        if (!state.m_mesh_map.contains(mesh_copy.mesh_id))
+        {
+            continue;
+        }
+
+        // Use the authoritative mesh data from mesh_map, not the stale copy in m_meshes
+        const MeshRecord& mesh = state.m_mesh_map.at(mesh_copy.mesh_id);
+
         // InstanceID will be used to access GPUMeshRecord in shader
         GPUMeshRecord gpu_mesh;
         // Materials
@@ -1258,14 +1303,30 @@ void glRemix::glRemixRenderer::render()
     m_descriptor_pager.copy_pages_to_gpu(m_context, &m_GPU_descriptor_heap,
                                          reserved_descriptor_offset);
 
-    // Build TLAS
-    build_tlas(cmd_list.Get());
+    m_context.start_imgui_frame();
+    {
+        DebugWindow::MeshStats mesh_stats{
+            .num_meshes_rendered = gpu_mesh_records_to_copy.size(),
+            .num_meshes = m_mesh_resources.size() - m_mesh_resources.freed_size(),
+            .num_textures = m_texture_map.size(),
+        };
+        m_debug_window.set_mesh_stats(mesh_stats);
+    }
+    {
+        DebugWindow::DebugInfo debug_info{
+            // This only displays the current frames meshes
+            .mesh_records = { .records = state.m_meshes.data(), .count = state.m_meshes.size() }
+        };
+
+        m_debug_window.render(debug_info);
+    }
 
     // build environment map
-    std::call_once(m_create_env_once, [&]() { create_environment_map(cmd_list.Get(), m_env_path); });
+    std::call_once(m_create_env_once, [&]
+                   { create_environment_map(cmd_list.Get(), m_env_path); });
 
     // Dispatch rays to UAV render target
-    if (!state.m_meshes.empty())
+    if (!gpu_mesh_records_to_copy.empty())
     {
         // float fov = XM_PIDIV2;  // 90 degrees
         // float aspect = static_cast<float>(win_dims.x) / static_cast<float>(win_dims.y);
@@ -1273,6 +1334,8 @@ void glRemix::glRemixRenderer::render()
         // float far_z = 1000.0f;
 
         // XMMATRIX proj = XMMatrixPerspectiveFovRH(fov, aspect, near_z, far_z);
+
+        build_tlas(cmd_list.Get());
 
         XMMATRIX proj = XMLoadFloat4x4(&state.m_matrix_stack.top(GL_PROJECTION));
 

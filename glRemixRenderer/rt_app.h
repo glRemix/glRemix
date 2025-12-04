@@ -89,7 +89,7 @@ class glRemixRenderer : public Application
     void create_mesh_record_buffer();
 
     // TODO: Expose this parameter in debug window?
-    static constexpr UINT FRAME_LENIENCY = 10;
+    static constexpr UINT FRAME_LENIENCY = 600;
     UINT m_current_frame = 0;
 
     void create_swapchain_and_rts(HWND hwnd);
@@ -114,6 +114,8 @@ private:
     void transform_replacement_vertices(std::vector<Vertex>& gltf_vertices,
                                         std::array<float, 3> scale_val);
     void handle_per_frame_replacement();
+
+    UINT collect_expired_meshes();
 
 public:
     glRemixRenderer() = default;

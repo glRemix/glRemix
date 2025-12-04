@@ -11,7 +11,7 @@ namespace glRemix
 class glState
 {
 public:
-    UINT32 m_current_frame;
+    UINT64 m_current_frame;
     size_t m_offset;  // tracked by state for display list purposes
 
     HWND hwnd;

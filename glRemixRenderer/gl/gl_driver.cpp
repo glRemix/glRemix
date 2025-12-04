@@ -80,6 +80,7 @@ static void hash_and_commit_geometry(glState& state)
     else
     {
         MeshRecord new_mesh;
+        new_mesh.mesh_id = hash;
 
         // Store pending geometry for deferred BLAS building
         PendingGeometry pending;
