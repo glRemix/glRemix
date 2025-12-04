@@ -19,7 +19,8 @@ struct Vertex
     XMFLOAT4 color;
     XMFLOAT3 normal;
     XMFLOAT2 uv;
-    XMFLOAT2 uv2; // TODO will need to be a pointer to some array of uv coordiantes but for only 2 textures this will work for now
+    XMFLOAT2 uv2;  // TODO will need to be a pointer to some array of uv coordiantes but for only 2
+                   // textures this will work for now
 };
 
 struct Light
@@ -82,7 +83,8 @@ struct GPUMeshRecord
     UINT32 mat_buffer_idx;
     UINT32 mat_idx;
     UINT32 tex_idx;
-    UINT32 tex_idx_2; // TODO again will need to be a pointer to some array of texture indices but will work for now
+    UINT32 tex_idx_2;  // TODO again will need to be a pointer to some array of texture indices but
+                       // will work for now
 };
 
 struct RayPayload

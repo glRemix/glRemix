@@ -401,8 +401,7 @@ static void handle_vertex2f(const GLCommandContext& ctx, const void* data)
                          .color = ctx.state.m_color,
                          .normal = ctx.state.m_normal,
                          .uv = ctx.state.m_uv,
-                         .uv2 = ctx.state.m_uv2
-    };
+                         .uv2 = ctx.state.m_uv2 };
     ctx.state.t_vertices.push_back(vertex);
 }
 
@@ -514,7 +513,7 @@ static void handle_end_list(const GLCommandContext& ctx, const void* data)
 static void handle_bind_texture(const GLCommandContext& ctx, const void* data)
 {
     const auto* cmd = static_cast<const GLBindTextureCommand*>(data);
-    
+
     glState& state = ctx.state;
 
     state.m_texture_binds[state.m_active_texture] = cmd->texture;
@@ -1134,14 +1133,14 @@ static void handle_wgl_input_event(const GLCommandContext& ctx, const void* data
 static void handle_active_texture(const GLCommandContext& ctx, const void* data)
 {
     const auto* cmd = static_cast<const GLActiveTextureARBCommand*>(data);
-    
+
     ctx.state.m_active_texture = cmd->texture;
 }
 
 static void handle_multi_texcoord2f(const GLCommandContext& ctx, const void* data)
 {
     const auto* cmd = static_cast<const GLMultiTexCoord2fARBCommand*>(data);
-    
+
     if (cmd->target == GL_TEXTURE0_ARB)
     {
         ctx.state.m_uv = { cmd->s, cmd->t };

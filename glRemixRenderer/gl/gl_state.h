@@ -12,6 +12,7 @@ namespace glRemix
 #define GL_TEXTURE0_ARB 0x84C0
 #define GL_TEXTURE1_ARB 0x84C1
 #define MAX_TEXTURES 2
+
 class glState
 {
 public:
@@ -74,6 +75,7 @@ public:
     // multitextures
     UINT32 m_active_texture = GL_TEXTURE0_ARB;
     tsl::robin_map<UINT32, UINT32> m_texture_binds;
-    tsl::robin_map<UINT32, UINT32> m_enabled_textures; // misleading name but stores whether or not each active texture arb slot is enabled
+    tsl::robin_map<UINT32, UINT32> m_enabled_textures;  // misleading name but stores whether or not
+                                                        // each active texture arb slot is enabled
 };
 }  // namespace glRemix
