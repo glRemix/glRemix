@@ -1356,7 +1356,6 @@ void glRemix::glRemixRenderer::render()
         build_tlas(cmd_list.Get());
 
         XMMATRIX proj;
-        m_debug_window.m_parameters.perspective_locked = true;
         if (m_debug_window.m_parameters.perspective_locked)
         {
             float fov = XM_PIDIV2;  // 90 degrees
