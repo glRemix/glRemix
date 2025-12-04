@@ -35,12 +35,13 @@ struct GraphicsPipelineDesc
 
 enum ExportType : UINT
 {
-    RAY_GEN = 0,
-    MISS = 1,
-    CLOSEST_HIT = 2,
-    ANY_HIT = 3,
-    INTERSECTION = 4,
-    SHADOW_MISS = 5,
+    RAY_GEN,
+    MISS,
+    CLOSEST_HIT,
+    ANY_HIT,
+    INTERSECTION,
+    SHADOW_MISS,
+    _MAX_EXPORTS,
 };
 
 struct RayTracingPipelineDesc
@@ -48,14 +49,12 @@ struct RayTracingPipelineDesc
     ID3D12RootSignature* global_root_signature = nullptr;
     ID3D12RootSignature* local_root_signature = nullptr;
 
-    static constexpr UINT MAX_EXPORTS = 7;
-
     // Order matters, it follows the above enum
-    std::array<const wchar_t*, MAX_EXPORTS> export_names{};
+    std::array<const wchar_t*, _MAX_EXPORTS> export_names{};
     UINT num_exports = 0;
 
     // Also follows the order of the enum
-    std::array<ID3D12RootSignature*, MAX_EXPORTS> local_root_signatures{};
+    std::array<ID3D12RootSignature*, _MAX_EXPORTS> local_root_signatures{};
 
     UINT max_recursion_depth = 1;
     UINT payload_size = 0;

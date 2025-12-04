@@ -1451,14 +1451,12 @@ void glRemix::glRemixRenderer::render()
             },
             .MissShaderTable{
                 .StartAddress = shader_table_base_address + m_miss_shader_table_offset,
-                .SizeInBytes = static_cast<UINT64>(2
-                                                   * m_miss_shader_table_stride),  // 2 miss shaders
+                .SizeInBytes = 2 * m_miss_shader_table_stride,
                 .StrideInBytes = m_miss_shader_table_stride,
             },
             .HitGroupTable{
                 .StartAddress = shader_table_base_address + m_hit_group_shader_table_offset,
-                .SizeInBytes = static_cast<UINT64>(
-                    2 * m_hit_group_shader_table_stride),  // 2 hit groups
+                .SizeInBytes = m_hit_group_shader_table_stride,
                 .StrideInBytes = m_hit_group_shader_table_stride,
             },
             .Width = win_dims.x,
