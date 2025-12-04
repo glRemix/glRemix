@@ -378,6 +378,7 @@ void ClosestHitMain(inout RayPayload payload, in TriAttributes attr)
 
     // Interpolate attributes
     float2 uv = v0.uv * bary.x + v1.uv * bary.y + v2.uv * bary.z;
+    float2 uv2 = v0.uv2 * bary.x + v1.uv2 * bary.y + v2.uv2 * bary.z;
     float3 vertex_color = v0.color.rgb * bary.x + v1.color.rgb * bary.y + v2.color.rgb * bary.z;
     float3 n_obj = normalize(v0.normal * bary.x + v1.normal * bary.y + v2.normal * bary.z);
 
@@ -424,6 +425,8 @@ void ClosestHitMain(inout RayPayload payload, in TriAttributes attr)
         float3 p = hit_pos;
         float3 N = normalize(n_world);
 
+        float dudx = 0.0f, dvdx = 0.0f, dudy = 0.0f, dvdy = 0.0f;
+
         if (payload.depth == 0)
         {
             float3 origin = payload.ray_origin;
@@ -441,41 +444,78 @@ void ClosestHitMain(inout RayPayload payload, in TriAttributes attr)
 
             float2 uv0 = v0.uv;
             float2 uv1 = v1.uv;
-            float2 uv2 = v2.uv;
+            float2 uv2_0 = v2.uv;
 
             float3 dpdu_obj, dpdv_obj;
-            calculate_triangle_surface_differential(p0, p1, p2, uv0, uv1, uv2, dpdu_obj, dpdv_obj);
+            calculate_triangle_surface_differential(
+            p0, p1, p2,
+            uv0, uv1, uv2_0,
+            dpdu_obj, dpdv_obj
+            );
 
             float3 dpdu = mul(dpdu_obj, o2w3x3);
             float3 dpdv = mul(dpdv_obj, o2w3x3);
 
             float4 dUV = calculate_screen_space_differential(
-                p, N,
-                origin, r_direction,
-                x_origin, rx_direction,
-                y_origin, ry_direction,
-                dpdu, dpdv);
+            p, N,
+            origin, r_direction,
+            x_origin, rx_direction,
+            y_origin, ry_direction,
+            dpdu, dpdv
+            );
 
-            float dudx = dUV.x;
-            float dvdx = dUV.y;
-            float dudy = dUV.z;
-            float dvdy = dUV.w;
-
-            float lod = lod_from_surface_differential(dudx, dvdx, dudy, dvdy, tex_mips);
-
-            float4 tex_sample = tex.SampleLevel(g_sampler, uv, lod);
-            tex_albedo = tex_sample.rgb;
+            dudx = dUV.x;
+            dvdx = dUV.y;
+            dudy = dUV.z;
+            dvdy = dUV.w;
+        }
+        
+        float lod_primary;
+        if (payload.depth == 0)
+        {
+            lod_primary = lod_from_surface_differential(
+            dudx, dvdx, dudy, dvdy, tex_mips
+            );
         }
         else
         {
             float3 V = -normalize(WorldRayDirection());
             float dist = RayTCurrent();
             float lod = lod_heuristic(N, V, dist);
+            lod_primary = clamp(lod, 0.0f, (float) (tex_mips - 1u));
+        }
+        
+        float4 tex_sample = tex.SampleLevel(g_sampler, uv, lod_primary);
+        tex_albedo = tex_sample.rgb;
+        
+        if (mesh.tex_idx_2 != 0xFFFFFFFFu)
+        {
+            Texture2D tex2 = ResourceDescriptorHeap[NonUniformResourceIndex(mesh.tex_idx_2)];
 
-            lod = clamp(lod, 0.0f, (float) (tex_mips - 1u));
+            uint tex2_mips;
+            {
+                uint tex2_width, tex2_height;
+                tex2.GetDimensions(0, tex2_width, tex2_height, tex2_mips);
+            }
 
-            float4 tex_sample = tex.SampleLevel(g_sampler, uv, lod);
-            tex_albedo = tex_sample.rgb;
+            float lod_secondary;
+            if (payload.depth == 0)
+            {
+                lod_secondary = lod_from_surface_differential(
+                dudx, dvdx, dudy, dvdy, tex2_mips
+                );
+            }
+            else
+            {
+                float3 V = -normalize(WorldRayDirection());
+                float dist = RayTCurrent();
+                float lod = lod_heuristic(N, V, dist);
+                lod_secondary = clamp(lod, 0.0f, (float) (tex2_mips - 1u));
+            }
+
+            float4 tex2_sample = tex2.SampleLevel(g_sampler, uv2, lod_secondary);
+
+            tex_albedo *= tex2_sample.rgb;
         }
     }
     

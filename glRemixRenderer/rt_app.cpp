@@ -1258,6 +1258,7 @@ void glRemix::glRemixRenderer::render()
         // Textures
         {
             gpu_mesh.tex_idx = 0xFFFFFFFFu;
+            gpu_mesh.tex_idx_2 = 0xFFFFFFFFu;
 
             if (mesh.tex_idx != 0xFFFFFFFFu && m_texture_map.contains(mesh.tex_idx))
             {
@@ -1267,6 +1268,16 @@ void glRemix::glRemixRenderer::render()
                                       .calculate_global_offset(dx::DescriptorPager::TEXTURES,
                                                                tex_page_index);
                 gpu_mesh.tex_idx = tex_desc_offset + tex_offset + reserved_descriptor_offset;
+            }
+
+            if (mesh.tex_idx_2 != 0xFFFFFFFFu && m_texture_map.contains(mesh.tex_idx_2))
+            {
+                auto tex_desc_offset = m_texture_map[mesh.tex_idx_2].descriptor.offset;
+                auto tex_page_index = m_texture_map[mesh.tex_idx_2].page_index;
+                auto tex_offset = m_descriptor_pager
+                                      .calculate_global_offset(dx::DescriptorPager::TEXTURES,
+                                                               tex_page_index);
+                gpu_mesh.tex_idx_2 = tex_desc_offset + tex_offset + reserved_descriptor_offset;
             }
         }
         gpu_mesh_records_to_copy.push_back(gpu_mesh);
@@ -1301,6 +1312,7 @@ void glRemix::glRemixRenderer::render()
     if (!state.m_meshes.empty())
     {
         XMMATRIX proj;
+        m_debug_window.m_parameters.perspective_locked = true;
         if (m_debug_window.m_parameters.perspective_locked)
         {
             float fov = XM_PIDIV2;  // 90 degrees
