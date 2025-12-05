@@ -91,6 +91,7 @@ bool glRemix::load_mesh_from_path(std::filesystem::path asset_path,
         size_t index_offset = out_indices.size();
         out_indices.resize(index_offset + index_acc.count);
 
+        bool valid = true;
         if (index_acc.componentType == fastgltf::ComponentType::UnsignedByte
             || index_acc.componentType == fastgltf::ComponentType::UnsignedShort)
         {
@@ -102,7 +103,8 @@ bool glRemix::load_mesh_from_path(std::filesystem::path asset_path,
                                                     if (idx >= primitive_vertex_count)
                                                     {
                                                         // index out of bounds
-                                                        return false;
+                                                        valid = false;
+                                                        return;
                                                     }
                                                     out_indices[index_offset + i]
                                                         = static_cast<uint32_t>(idx)
@@ -120,6 +122,7 @@ bool glRemix::load_mesh_from_path(std::filesystem::path asset_path,
                                                     if (idx >= primitive_vertex_count)
                                                     {
                                                         // index out of bounds
+                                                        valid = false;
                                                         return;
                                                     }
                                                     out_indices[index_offset + i]
@@ -127,6 +130,11 @@ bool glRemix::load_mesh_from_path(std::filesystem::path asset_path,
                                                           + static_cast<uint32_t>(vertex_offset);
                                                     ++i;
                                                 });
+        }
+
+        if (!valid)
+        {
+            return false;
         }
 
         // get vertices
