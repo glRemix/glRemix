@@ -6,6 +6,7 @@
 #include "application.h"
 #include "debug_window.h"
 #include "dx/d3d12_as.h"
+#include "mesh_loader.h"
 
 #include "descriptor_pager.h"
 #include "gl/gl_matrix_stack.h"
@@ -73,6 +74,11 @@ class glRemixRenderer : public Application
     // TODO: Stop using GPU Upload memory for these because they are committed resources!!!
     // Since VB/IB/BLAS are destroyed and created so often we would like them to be placed resources
     FreeListVector<MeshResources> m_mesh_resources;
+
+    // asset replacement tracker
+    tsl::robin_map<UINT32, MeshRecord>
+        m_mesh_replacement_tracker;  // maps index in m_meshes of mesh to be replaced, with
+                                     // replacement mesh
 
     // Textures
     std::array<std::vector<dx::D3D12Buffer>, m_frames_in_flight> m_texture_upload_buffers;

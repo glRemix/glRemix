@@ -28,6 +28,8 @@ public:
             MeshRecord* records;
             size_t count;
         } mesh_records;  // Array for replacement
+
+        tsl::robin_map<UINT64, MeshRecord>* m_mesh_map = nullptr;
     };
 
 private:
@@ -35,11 +37,12 @@ private:
 
     float m_fps = 0.0f;
 
-    tsl::robin_map<UINT64, MeshRecord>* m_mesh_map = nullptr;
     UINT64 m_mesh_ID_to_replace = -1;
     std::array<char, 256> m_asset_path{};
     std::function<void(UINT64 mesh_id, const char* asset_path)>
         m_replace_mesh_callback;  // replace_mesh function from rt_app
+
+    UINT64 m_selected_mesh_for_window = ~0ull;
 
     const uint32_t mk_initialPoxX = 0;
     const uint32_t mk_initialPosY = 0;
@@ -48,7 +51,7 @@ private:
     void render_settings();
     void render_debug_log();
     void render_mesh_ids(const MeshRecord* records, size_t count);
-    void render_mesh_visibility();
+    void render_mesh_options_window(tsl::robin_map<UINT64, MeshRecord>* m_mesh_map);
 
 public:
     HWND m_hwnd;

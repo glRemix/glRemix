@@ -3,6 +3,7 @@
 #include <utility>
 #include <imgui.h>
 #include <imgui_impl_win32.h>
+#include <imgui_internal.h>
 #include <cstdio>
 
 #include <shared/debug_utils.h>
@@ -97,15 +98,10 @@ void DebugWindow::render(const DebugInfo debug_info)
                 render_settings();
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("Asset Replacement"))
+            if (ImGui::BeginTabItem("Asset List"))
             {
                 const auto& mesh_records = debug_info.mesh_records;
                 render_mesh_ids(mesh_records.records, mesh_records.count);
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Toggle Mesh Visibility"))
-            {
-                render_mesh_visibility();
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Debug Log"))
@@ -116,6 +112,7 @@ void DebugWindow::render(const DebugInfo debug_info)
             ImGui::EndTabBar();
         }
     }
+    render_mesh_options_window(debug_info.m_mesh_map);
     ImGui::End();
 }
 
@@ -133,7 +130,7 @@ void DebugWindow::set_mesh_stats(const MeshStats& mesh_stats)
 
 void DebugWindow::render_mesh_ids(const MeshRecord* records, const size_t count)
 {
-    ImGui::Text("List of Meshes ");
+    ImGui::Text("List of Assets - Double Click for Asset Options");
 
     // render meshIDs and get selected mesh
     if (ImGui::BeginListBox("##assets"))
@@ -144,59 +141,78 @@ void DebugWindow::render_mesh_ids(const MeshRecord* records, const size_t count)
 
             const bool is_selected = (m_mesh_ID_to_replace == mesh_id);
             char buf[64];
-            snprintf(buf, 64, "Mesh ID: %llu", mesh_id);
+            snprintf(buf, 64, "Asset ID: %llu", mesh_id);
+
             if (ImGui::Selectable(buf, is_selected))
             {
                 m_mesh_ID_to_replace = mesh_id;
             }
-        }
-        ImGui::EndListBox();
-    }
 
-    // handle asset replacement with selected mesh
-    if (std::cmp_not_equal(m_mesh_ID_to_replace, -1))
-    {
-        ImGui::Separator();
-
-        // get new asset path from user input
-        ImGui::InputText("Replacement Asset Path", m_asset_path.data(), m_asset_path.size());
-
-        // if button is pressed to replace asset, call replace_mesh from rt_app
-        if (ImGui::Button("Replace Asset"))
-        {
-            ImGui::Text("%s", m_asset_path);
-            if (m_replace_mesh_callback)
+            // for mesh options window
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
             {
-                m_replace_mesh_callback(m_mesh_ID_to_replace, m_asset_path.data());
+                m_selected_mesh_for_window = mesh_id;
             }
         }
+        ImGui::EndListBox();
     }
 }
 
-void DebugWindow::render_mesh_visibility()
+void DebugWindow::render_mesh_options_window(tsl::robin_map<UINT64, MeshRecord>* m_mesh_map)
 {
-    ImGui::Text("Toggle Mesh Visibility ");
-    if (ImGui::BeginListBox("##mesh_visibility"))
+    if (m_selected_mesh_for_window == ~0ull)
     {
-        if (m_mesh_map && !m_mesh_map->empty())
+        return;
+    }
+
+    // check if mesh still exists in map
+    if (!m_mesh_map->contains(m_selected_mesh_for_window))
+    {
+        m_selected_mesh_for_window = ~0ull;
+        return;
+    }
+
+    char title[64];
+    snprintf(title, sizeof(title), "Asset Options: %llu", m_selected_mesh_for_window);
+
+    // find position of main window
+    ImGuiWindow* main_imgui = ImGui::FindWindowByName("glRemix");
+    if (main_imgui)
+    {
+        ImVec2 pos = main_imgui->Pos;
+        ImVec2 size = main_imgui->Size;
+        ImVec2 new_pos(pos.x + size.x + 10.0f, pos.y);
+
+        ImGui::SetNextWindowPos(new_pos, ImGuiCond_Always);
+    }
+
+    bool is_open = true;
+    if (ImGui::Begin(title, &is_open, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        auto& mesh = m_mesh_map->at(m_selected_mesh_for_window);
+
+        // visibility toggle option
+        ImGui::Checkbox("Visible", &mesh.visible);
+
+        ImGui::Separator();
+
+        ImGui::Text("Asset Replacement - Path to New GLTF File:");
+        ImGui::InputText("##ReplacementPath", m_asset_path.data(), sizeof(m_asset_path));
+
+        if (ImGui::Button("Replace Asset"))
         {
-            for (auto it = m_mesh_map->begin(); it != m_mesh_map->end();)
+            if (m_replace_mesh_callback)
             {
-                auto mesh_id = it->first;
-                ImGui::PushID(reinterpret_cast<void*>(mesh_id));
-                bool& visible = m_mesh_map->at(mesh_id).visible;
-                char buf[64];
-                snprintf(buf, 64, "Mesh ID: %llu", mesh_id);
-                ImGui::Checkbox(buf, &visible);
-                ImGui::PopID();
-                ++it;
+                m_replace_mesh_callback(m_selected_mesh_for_window, m_asset_path.data());
             }
         }
-        else
-        {
-            ImGui::Text("Zero meshes available to toggle.");
-        }
-        ImGui::EndListBox();
+    }
+
+    ImGui::End();
+
+    if (!is_open)
+    {
+        m_selected_mesh_for_window = ~0ull;
     }
 }
 
@@ -207,9 +223,24 @@ void DebugWindow::render_performance_stats()
 
     ImGui::Text("FPS: %.1f (%.3f ms/frame)", m_fps, 1000.0f / m_fps);
     ImGui::Separator();
+
     ImGui::Text("Meshes Rendered: %zu", m_mesh_stats.num_meshes_rendered);
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+    {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+        ImGui::TextUnformatted("This number is an upper bound; the actual number of rendered "
+                               "meshes is less than or equal to this value.");
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+
     ImGui::Text("Mesh Count: %zu", m_mesh_stats.num_meshes);
+
     ImGui::Text("Texture Count: %zu", m_mesh_stats.num_textures);
+
     // TODO: More stats like heap allocations, allocate descriptors, memory usage, etc
 }
 
