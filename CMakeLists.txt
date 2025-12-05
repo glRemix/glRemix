@@ -46,7 +46,7 @@ endif()
 function(glremix_add_shim_builder platform description)
     set(target "${GLREMIX_SHIM_TARGET_PREFIX}${platform}")
     set(builder "${GLREMIX_SHIM_EXTERNAL_PREFIX}${target}${GLREMIX_SHIM_EXTERNAL_SUFFIX}")
-    set(GLREMIX_EXTERNAL_BINARY_DIR "${CMAKE_BINARY_DIR}/external/shim-${platform}")
+    set(GLREMIX_EXTERNAL_BINARY_DIR "${CMAKE_BINARY_DIR}/external/shim-${platform}" CACHE PATH "")
 
     ExternalProject_Add(${builder}
         SOURCE_DIR "${GLREMIX_SHIM_SOURCE_DIR}"

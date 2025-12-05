@@ -103,6 +103,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     "${REPO_ROOT}/external/DirectXTex/include"
     "${REPO_ROOT}/external/imgui"
     "${REPO_ROOT}"
+    "${GLREMIX_EXTERNAL_BINARY_DIR}/includes"
 )
 
 # Create an imported target for DirectXTex with configuration-specific library paths if available.
@@ -175,7 +176,7 @@ if(WIN32)
     if(GLREMIX_DYNAMIC_MESH_CAP)
         target_compile_definitions(${PROJECT_NAME} PRIVATE GLREMIX_DYNAMIC_MESH_CAP)
     endif()
-    
+
     if(MSVC)
         target_compile_options(${PROJECT_NAME} PRIVATE
             /MP # Enable multi-processor compilation

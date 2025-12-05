@@ -3,7 +3,9 @@
 #include <tsl/robin_map.h>
 #include <array>
 #include <vector>
-#include <climits>
+#include <limits>
+
+#include "generated/glext_enums.inl"
 
 #include "gl/gl_matrix_stack.h"
 
@@ -11,13 +13,10 @@
 
 namespace glRemix
 {
-// TODO link gl driver side to glext_enums.inl
-#define GL_TEXTURE0_ARB 0x84C0
-#define GL_TEXTURE1_ARB 0x84C1
 
 struct glState
 {
-    UINT64 m_current_frame = 0;  // standard default for unsigned integer
+    UINT64 m_current_frame = UINT_MAX;
 
     XMFLOAT4 m_color = { 1.0f, 1.0f, 1.0f, 1.0f };
     XMFLOAT3 m_normal = { 0.0f, 0.0f, 1.0f };  // Default according to spec
