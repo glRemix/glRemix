@@ -459,7 +459,7 @@ void glRemix::glRemixRenderer::create()
     }
 
     // set asset replacement callback
-    m_debug_window.set_replace_mesh_callback([this](UINT32 meshID, const char* path)
+    m_debug_window.set_replace_mesh_callback([this](UINT64 meshID, const char* path)
                                              { this->replace_mesh(meshID, path); });
 }
 

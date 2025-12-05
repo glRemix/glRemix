@@ -15,12 +15,8 @@ namespace glRemix
 #define GL_TEXTURE0_ARB 0x84C0
 #define GL_TEXTURE1_ARB 0x84C1
 
-// #define MAX_TEXTURES 2
-
 struct glState
 {
-    const UINT32 k_MAX_TEXTURES;
-
     UINT64 m_current_frame = 0;  // standard default for unsigned integer
 
     XMFLOAT4 m_color = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -90,9 +86,6 @@ struct glState
     tsl::robin_map<UINT32, UINT32> m_enabled_textures{};  // misleading name but stores whether or not
                                                           // each active texture arb slot is enabled
 
-    explicit glState(const HWND local_hwnd, const UINT32 max_textures)
-        : m_local_hwnd(local_hwnd), k_MAX_TEXTURES(max_textures)
-    {
-    }
+    explicit glState(const HWND local_hwnd) : m_local_hwnd(local_hwnd) {}
 };
 }  // namespace glRemix
