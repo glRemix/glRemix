@@ -9,7 +9,7 @@ int main(int argc, char* argv[])
     constexpr bool enable_debug = false;
 #endif
 
-    static glRemix::glRemixRenderer renderer;
+    glRemix::glRemixRenderer renderer;
     renderer.run_with_hwnd(enable_debug);
     return 0;
 }

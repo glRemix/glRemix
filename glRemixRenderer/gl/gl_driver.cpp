@@ -1259,6 +1259,7 @@ void glRemix::glDriver::init_handlers()
 
 void glRemix::glDriver::init(const HWND local_hwnd)
 {
+    m_command_buffer.reserve(k_MAX_IPC_PAYLOAD);
     m_state = std::make_unique<glState>(local_hwnd, k_MAX_TEXTURE_UNITS);
 
     m_ipc.init_reader();

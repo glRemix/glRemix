@@ -36,7 +36,10 @@ class glDriver
 {
     std::unique_ptr<glState> m_state = nullptr;  // glState (and resources) are owned and released
     IPCProtocol m_ipc;
-    std::array<UINT8, k_MAX_IPC_PAYLOAD> m_command_buffer{};
+
+    /* must be heap-allocated due to it's target size (k_MAX_PAYLOAD_SIZE) being upwards of 16mib.
+    however, can call ::reserve to ensure allocation only happens once */
+    std::vector<UINT8> m_command_buffer{};
 
     using GLCommandHandler = void (*)(const GLCommandContext&, const void* data);
     std::array<GLCommandHandler, NUM_COMMANDS> gl_command_handlers{};
