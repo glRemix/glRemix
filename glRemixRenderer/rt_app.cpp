@@ -800,12 +800,11 @@ void glRemix::glRemixRenderer::handle_per_frame_replacement()
     for (auto it = m_mesh_replacement_tracker.begin(); it != m_mesh_replacement_tracker.end();)
     {
         UINT32 index = it->first;  // index for m_meshes
-
-        MeshRecord* replacement;
-        replacement = &m_mesh_replacement_tracker[index];
+        MeshRecord* replacement = &m_mesh_replacement_tracker[index];
 
         // update frame last used
-        replacement->last_frame = state.m_current_frame;
+        MeshRecord* replacement_from_map = &state.m_mesh_map[replacement->mesh_id];
+        replacement_from_map->last_frame = state.m_current_frame;
 
         // check if the index is valid
         if (index >= state.m_meshes.size())
