@@ -8,8 +8,8 @@
 
 namespace glRemix
 {
-constexpr wchar_t k_LOCAL_WINDOW_CLASS_DEFAULT_NAME[] = L"glRemix Debug Window Class";
-constexpr wchar_t k_LOCAL_WINDOW_DEFAULT_TEXT[] = L"glRemix Debug Window";
+constexpr wchar_t k_LOCAL_WINDOW_CLASS_DEFAULT_NAME[] = L"glRemix Window Class";
+constexpr wchar_t k_LOCAL_WINDOW_DEFAULT_TEXT[] = L"glRemix Window";
 
 class DebugWindow
 {
@@ -41,8 +41,8 @@ private:
     std::function<void(UINT64 mesh_id, const char* asset_path)>
         m_replace_mesh_callback;  // replace_mesh function from rt_app
 
-    const uint32_t m_initialSizeX = 600;
-    const uint32_t m_initialSizeY = 400;
+    const uint32_t mk_initialPoxX = 0;
+    const uint32_t mk_initialPosY = 0;
 
     void render_performance_stats();
     void render_settings();
@@ -68,5 +68,7 @@ public:
     void set_replace_mesh_callback(
         std::function<void(UINT64 mesh_id, const char* asset_path)> callback);
     void set_mesh_stats(const MeshStats& mesh_stats);
+
+    void destroy();
 };
 }  // namespace glRemix

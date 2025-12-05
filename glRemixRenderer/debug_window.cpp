@@ -14,19 +14,22 @@ using namespace glRemix;
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandlerEx(HWND hWnd, UINT msg, WPARAM wParam,
                                                                LPARAM lParam, ImGuiIO& io);
 
-LRESULT CALLBACK DebugWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK s_local_window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+    switch (msg)
+    {
+        default: break;  // TODO: case on msg for custom input handling
+    }
+
+    // forward to ImGui
     ImGuiIO& io = ImGui::GetIO();
     if (ImGui_ImplWin32_WndProcHandlerEx(hwnd, msg, wParam, lParam, io))
     {
-        return true;
+        return 1;
     }
 
-    switch (msg)
-    {
-        case WM_DESTROY: PostQuitMessage(0); return 0;
-        default: return DefWindowProcW(hwnd, msg, wParam, lParam);
-    }
+    // it is required to default handle all callbacks that have reached this point
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
 void DebugWindow::init_imgui_frontends()
@@ -44,7 +47,7 @@ void DebugWindow::init_imgui_frontends()
 
     WNDCLASSEXW wc = {};
 
-    wc.lpfnWndProc = DebugWindowProc;  // default
+    wc.lpfnWndProc = s_local_window_proc;
     wc.hInstance = hInstance;
     wc.lpszClassName = k_LOCAL_WINDOW_CLASS_DEFAULT_NAME;
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
@@ -54,10 +57,11 @@ void DebugWindow::init_imgui_frontends()
     THROW_IF_FALSE(RegisterClassExW(&wc));  // register the class
 
     m_hwnd = CreateWindowEx(0, k_LOCAL_WINDOW_CLASS_DEFAULT_NAME, k_LOCAL_WINDOW_DEFAULT_TEXT,
-                            WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-                            CW_USEDEFAULT, nullptr, nullptr, hInstance, nullptr);
+                            WS_POPUP, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+                            nullptr, nullptr, hInstance, nullptr);
 
     THROW_IF_FALSE(m_hwnd);
+    SetFocus(m_hwnd);
 
     THROW_IF_FALSE(ImGui_ImplWin32_Init(m_hwnd));
 
@@ -66,10 +70,20 @@ void DebugWindow::init_imgui_frontends()
     main_vp->PlatformHandleRaw = (void*)m_hwnd;
 }
 
+void glRemix::DebugWindow::destroy()
+{
+    if (m_hwnd)
+    {
+        DestroyWindow(m_hwnd);
+        m_hwnd = nullptr;
+    }
+    UnregisterClassW(k_LOCAL_WINDOW_CLASS_DEFAULT_NAME, GetModuleHandle(nullptr));
+}
+
 void DebugWindow::render(const DebugInfo debug_info)
 {
-    ImGui::SetNextWindowSize(ImVec2(m_initialSizeX, m_initialSizeX), ImGuiCond_Always);
-    if (ImGui::Begin("glRemix", nullptr, 0))
+    ImGui::SetNextWindowPos(ImVec2(mk_initialPosY, mk_initialPosY), ImGuiCond_Once);
+    if (ImGui::Begin("glRemix", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
     {
         if (ImGui::BeginTabBar("DebugTabs"))
         {
@@ -164,16 +178,23 @@ void DebugWindow::render_mesh_visibility()
     ImGui::Text("Toggle Mesh Visibility ");
     if (ImGui::BeginListBox("##mesh_visibility"))
     {
-        for (auto it = m_mesh_map->begin(); it != m_mesh_map->end();)
+        if (m_mesh_map && !m_mesh_map->empty())
         {
-            auto mesh_id = it->first;
-            ImGui::PushID(reinterpret_cast<void*>(mesh_id));
-            bool& visible = m_mesh_map->at(mesh_id).visible;
-            char buf[64];
-            snprintf(buf, 64, "Mesh ID: %llu", mesh_id);
-            ImGui::Checkbox(buf, &visible);
-            ImGui::PopID();
-            ++it;
+            for (auto it = m_mesh_map->begin(); it != m_mesh_map->end();)
+            {
+                auto mesh_id = it->first;
+                ImGui::PushID(reinterpret_cast<void*>(mesh_id));
+                bool& visible = m_mesh_map->at(mesh_id).visible;
+                char buf[64];
+                snprintf(buf, 64, "Mesh ID: %llu", mesh_id);
+                ImGui::Checkbox(buf, &visible);
+                ImGui::PopID();
+                ++it;
+            }
+        }
+        else
+        {
+            ImGui::Text("Zero meshes available to toggle.");
         }
         ImGui::EndListBox();
     }

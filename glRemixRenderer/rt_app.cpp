@@ -1609,6 +1609,7 @@ void glRemix::glRemixRenderer::destroy()
 {
     m_driver.destroy();
     m_context.destroy_imgui();
+    m_debug_window.destroy();
 }
 
 void glRemix::glRemixRenderer::create_swapchain_and_rts(HWND hwnd)
