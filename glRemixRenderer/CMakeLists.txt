@@ -33,6 +33,7 @@ set(RENDERER_SOURCES
     "debug_window.cpp"
     "mesh_loader.cpp"
     "debug_log.cpp"
+    "arena.cpp"
 )
 
 set(RENDERER_HEADERS
@@ -63,6 +64,7 @@ set(RENDERER_HEADERS
     "debug_window.h"
     "mesh_loader.h"
     "debug_log.h"
+    "arena.h"
 )
 
 set(D3D12MA_SOURCES
