@@ -85,7 +85,7 @@ void DebugWindow::render_mesh_ids(const MeshRecord* records, const size_t count)
 
 void DebugWindow::render_mesh_options_window(tsl::robin_map<UINT64, MeshRecord>* m_mesh_map)
 {
-    if (m_selected_mesh_for_window == -1)
+    if (m_selected_mesh_for_window == ~0ull)
     {
         return;
     }
@@ -93,42 +93,41 @@ void DebugWindow::render_mesh_options_window(tsl::robin_map<UINT64, MeshRecord>*
     // check if mesh still exists in map
     if (!m_mesh_map->contains(m_selected_mesh_for_window))
     {
-        m_selected_mesh_for_window = -1;
+        m_selected_mesh_for_window = ~0ull;
         return;
     }
 
     char title[64];
     snprintf(title, sizeof(title), "Asset Options: %llu", m_selected_mesh_for_window);
 
-    ImGui::Begin(title, nullptr, 0);
-
-    auto& mesh = m_mesh_map->at(m_selected_mesh_for_window);
-
-    // visibility toggle option
-    ImGui::Checkbox("Visible", &mesh.visible);
-
-    ImGui::Separator();
-
-    ImGui::Text("Asset Replacement - Path to New GLTF File:");
-    ImGui::InputText("##ReplacementPath", m_asset_path_buffer, sizeof(m_asset_path_buffer));
-
-    if (ImGui::Button("Replace Asset"))
+    bool is_open = true;
+    if (ImGui::Begin(title, &is_open))
     {
-        if (m_replace_mesh_callback)
+        auto& mesh = m_mesh_map->at(m_selected_mesh_for_window);
+
+        // visibility toggle option
+        ImGui::Checkbox("Visible", &mesh.visible);
+
+        ImGui::Separator();
+
+        ImGui::Text("Asset Replacement - Path to New GLTF File:");
+        ImGui::InputText("##ReplacementPath", m_asset_path.data(), sizeof(m_asset_path));
+
+        if (ImGui::Button("Replace Asset"))
         {
-            m_replace_mesh_callback(m_selected_mesh_for_window, m_asset_path_buffer);
+            if (m_replace_mesh_callback)
+            {
+                m_replace_mesh_callback(m_selected_mesh_for_window, m_asset_path.data());
+            }
         }
     }
 
-    ImGui::Separator();
-
-    // close window button
-    if (ImGui::Button("Close"))
-    {
-        m_selected_mesh_for_window = -1;
-    }
-
     ImGui::End();
+
+    if (!is_open)
+    {
+        m_selected_mesh_for_window = ~0ull;
+    }
 }
 
 void DebugWindow::render_performance_stats()
@@ -138,9 +137,24 @@ void DebugWindow::render_performance_stats()
 
     ImGui::Text("FPS: %.1f (%.3f ms/frame)", m_fps, 1000.0f / m_fps);
     ImGui::Separator();
+
     ImGui::Text("Meshes Rendered: %zu", m_mesh_stats.num_meshes_rendered);
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+    {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+        ImGui::TextUnformatted("This number is an upper bound; the actual number of rendered "
+                               "meshes is less than or equal to this value.");
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+
     ImGui::Text("Mesh Count: %zu", m_mesh_stats.num_meshes);
+
     ImGui::Text("Texture Count: %zu", m_mesh_stats.num_textures);
+
     // TODO: More stats like heap allocations, allocate descriptors, memory usage, etc
 }
 

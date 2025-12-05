@@ -33,8 +33,7 @@ bool glRemix::MeshLoader::load_mesh_from_path(std::filesystem::path asset_path,
     }
 
     // get textures
-    const auto& img = asset->images;
-    for (size_t i = 0; i < 1; ++i)  // just get base color texture for now
+    for (UINT i = 0; i < 1; ++i)  // just get base color texture for now
     {
         const auto& img = asset->images[i];
 
@@ -57,24 +56,7 @@ bool glRemix::MeshLoader::load_mesh_from_path(std::filesystem::path asset_path,
             }
         }
 
-        // convert to correct format
-        ScratchImage converted;
-        const DXGI_FORMAT target_format = DXGI_FORMAT_R8G8B8A8_UNORM;
-
-        if (metadata.format != target_format)
-        {
-            HRESULT hr = Convert(*scratch_image.GetImage(0, 0, 0), target_format,
-                                 TEX_FILTER_DEFAULT, TEX_THRESHOLD_DEFAULT, converted);
-
-            if (FAILED(hr))
-            {
-                printf("Failed to convert GLTF texture to RGBA8\n");
-                return false;
-            }
-
-            scratch_image = std::move(converted);
-        }
-
+        // assume that scratch_image is the correct format
         const Image* img_data = scratch_image.GetImage(0, 0, 0);
         const size_t byte_size = img_data->slicePitch;
         auto pixel_buffer = std::make_unique<uint8_t[]>(byte_size);
@@ -87,7 +69,7 @@ bool glRemix::MeshLoader::load_mesh_from_path(std::filesystem::path asset_path,
         };
         out_texture.pixels.assign(pixel_buffer.get(), pixel_buffer.get() + byte_size);
 
-        m_owned_texture_buffers.emplace_back(std::move(pixel_buffer));
+        // m_owned_texture_buffers.emplace_back(std::move(pixel_buffer));
     }
 
     // get first mesh only for now
@@ -119,12 +101,11 @@ bool glRemix::MeshLoader::load_mesh_from_path(std::filesystem::path asset_path,
 
             for (size_t i = 0; i < index_acc.count; i++)
             {
-                const uint32_t original_idx = static_cast<uint32_t>(temp[i]);
+                const uint32_t original_idx = temp[i];
                 // check if index is in bounds for this primitive
                 if (original_idx >= primitive_vertex_count)
                 {
-                    printf("index %u out of bounds (max: %zu) in primitive\n", original_idx,
-                           primitive_vertex_count);
+                    // index out of bounds
                     return false;
                 }
                 out_indices[index_offset + i] = original_idx + static_cast<uint32_t>(vertex_offset);
@@ -142,8 +123,7 @@ bool glRemix::MeshLoader::load_mesh_from_path(std::filesystem::path asset_path,
                 // check if index is in bounds for this primitive
                 if (original_idx >= primitive_vertex_count)
                 {
-                    printf("index %u out of bounds (max: %zu) in primitive\n", original_idx,
-                           primitive_vertex_count);
+                    // index out of bounds
                     return false;
                 }
                 out_indices[index_offset + i] = original_idx + static_cast<uint32_t>(vertex_offset);

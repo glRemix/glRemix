@@ -34,13 +34,12 @@ private:
 
     float m_fps = 0.0f;
 
-    // tsl::robin_map<UINT64, MeshRecord>* m_mesh_map = nullptr;
     UINT64 m_mesh_ID_to_replace = -1;
-    char m_asset_path_buffer[256] = "";
+    std::array<char, 256> m_asset_path{};
     std::function<void(UINT64 mesh_id, const char* asset_path)>
         m_replace_mesh_callback;  // replace_mesh function from rt_app
 
-    UINT64 m_selected_mesh_for_window = -1;
+    UINT64 m_selected_mesh_for_window = ~0ull;
 
     void render_performance_stats();
     void render_settings();
