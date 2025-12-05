@@ -105,3 +105,8 @@ struct RayPayload
     BOOL is_mirror;
     XMUINT2 _padding;
 };
+
+struct ShadowPayload
+{
+    BOOL hit;
+};
