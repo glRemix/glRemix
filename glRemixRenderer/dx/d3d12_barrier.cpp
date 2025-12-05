@@ -446,7 +446,7 @@ void emit_barriers(ID3D12GraphicsCommandList7* command_list, Resource* const* re
         });
     }
 
-    if (!barrier_groups.empty() > 0 && command_list)
+    if (!barrier_groups.empty() && command_list)
     {
         command_list->Barrier(static_cast<UINT>(barrier_groups.size()), barrier_groups.data());
     }
