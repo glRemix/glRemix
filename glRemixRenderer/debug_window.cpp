@@ -2,13 +2,73 @@
 
 #include <utility>
 #include <imgui.h>
-#include "debug_log.h"
+#include <imgui_impl_win32.h>
 #include <cstdio>
+
+#include <shared/debug_utils.h>
+
+#include "debug_log.h"
 
 using namespace glRemix;
 
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandlerEx(HWND hWnd, UINT msg, WPARAM wParam,
+                                                               LPARAM lParam, ImGuiIO& io);
+
+LRESULT CALLBACK DebugWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    ImGuiIO& io = ImGui::GetIO();
+    if (ImGui_ImplWin32_WndProcHandlerEx(hwnd, msg, wParam, lParam, io))
+    {
+        return true;
+    }
+
+    switch (msg)
+    {
+        case WM_DESTROY: PostQuitMessage(0); return 0;
+        default: return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+}
+
+void DebugWindow::init_imgui_frontends()
+{
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+
+    ImGui::StyleColorsDark();
+
+    HINSTANCE hInstance = GetModuleHandle(nullptr);
+
+    WNDCLASSEXW wc = {};
+
+    wc.lpfnWndProc = DebugWindowProc;  // default
+    wc.hInstance = hInstance;
+    wc.lpszClassName = k_LOCAL_WINDOW_CLASS_DEFAULT_NAME;
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.cbSize = sizeof(WNDCLASSEXW);
+
+    THROW_IF_FALSE(RegisterClassExW(&wc));  // register the class
+
+    m_hwnd = CreateWindowEx(0, k_LOCAL_WINDOW_CLASS_DEFAULT_NAME, k_LOCAL_WINDOW_DEFAULT_TEXT,
+                            WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+                            CW_USEDEFAULT, nullptr, nullptr, hInstance, nullptr);
+
+    THROW_IF_FALSE(m_hwnd);
+
+    THROW_IF_FALSE(ImGui_ImplWin32_Init(m_hwnd));
+
+    ImGuiViewport* main_vp = ImGui::GetMainViewport();
+    main_vp->PlatformHandle = (void*)m_hwnd;
+    main_vp->PlatformHandleRaw = (void*)m_hwnd;
+}
+
 void DebugWindow::render(const DebugInfo debug_info)
 {
+    ImGui::SetNextWindowSize(ImVec2(m_initialSizeX, m_initialSizeX), ImGuiCond_Always);
     if (ImGui::Begin("glRemix", nullptr, 0))
     {
         if (ImGui::BeginTabBar("DebugTabs"))

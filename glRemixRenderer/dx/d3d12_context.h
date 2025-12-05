@@ -41,7 +41,7 @@ class D3D12Context
 
     ComPtr<IDxcUtils> m_dxc_utils = nullptr;
 
-    HWND m_window = nullptr;
+    HWND m_host_hwnd = nullptr;
 
     XMUINT2 m_swapchain_dims{};
     ComPtr<IDXGISwapChain3> m_swapchain;
@@ -174,16 +174,16 @@ public:
                            UINT offset);
 
     // Note: ImGui using win32 is blurry, even the sample is like this, so I assume it's expected
-    bool init_imgui();
+    bool init_imgui_backends();
     void start_imgui_frame();
     void render_imgui_draw_data(ID3D12GraphicsCommandList7* cmd_list);
     void destroy_imgui();
 
     bool wait_idle(const D3D12Queue* queue);
 
-    HWND get_window() const
+    HWND get_host_window_handle() const
     {
-        return m_window;
+        return m_host_hwnd;
     }
 
     ~D3D12Context();

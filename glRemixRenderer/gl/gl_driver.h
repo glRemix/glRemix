@@ -6,6 +6,8 @@
 #include "gl_state.h"
 
 #include <array>
+#include <vector>
+#include <memory>
 
 namespace glRemix
 {
@@ -13,7 +15,7 @@ constexpr size_t NUM_COMMANDS = static_cast<size_t>(GLCommandType::_COUNT);
 constexpr SIZE_T NUM_CLIENT_ARRAYS = static_cast<SIZE_T>(GLRemixClientArrayType::_COUNT);
 
 class glDriver;  // forward declare
-class glState;
+struct glState;
 
 // represents view of command within shared memory
 struct GLCommandView
@@ -32,14 +34,13 @@ struct GLCommandContext
 
 class glDriver
 {
-    glState m_state;
+    std::unique_ptr<glState> m_state = nullptr;  // glState (and resources) are owned and released
     IPCProtocol m_ipc;
-    std::array<UINT8, k_MAX_IPC_PAYLOAD> m_command_buffer;
+    std::array<UINT8, k_MAX_IPC_PAYLOAD> m_command_buffer{};
 
     using GLCommandHandler = void (*)(const GLCommandContext&, const void* data);
     std::array<GLCommandHandler, NUM_COMMANDS> gl_command_handlers{};
 
-    void init();
     void init_handlers();
     bool read_next_command(const UINT8* buffer, size_t buffer_size, size_t& offset,
                            GLCommandView& out);
@@ -49,17 +50,24 @@ public:
     void read_buffer(const GLCommandContext& ctx, const UINT8* buffer, size_t buffer_size,
                      size_t& offset);
 
-    glState& get_state()
+    inline glState& get_state()
     {
-        return m_state;
+        return *m_state;
     }
 
-    const UINT8* get_command_buffer_data() const
+    inline const UINT8* get_command_buffer_data() const
     {
         return m_command_buffer.data();
     }
 
-    glDriver();
+    void init(const HWND local_hwnd);
+
+    inline void destroy()
+    {
+        m_state.reset();
+    };
+
+    glDriver() = default;
     ~glDriver() = default;
 };
 

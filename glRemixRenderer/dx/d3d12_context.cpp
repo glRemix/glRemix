@@ -229,7 +229,7 @@ bool D3D12Context::create_swapchain(const HWND window, D3D12Queue* const queue,
 {
     assert(frame_index);
 
-    m_window = window;
+    m_host_hwnd = window;
 
     // I hope the host app doesn't immediately resize the window after creation!
     XMUINT2 dims;
@@ -273,9 +273,9 @@ bool D3D12Context::create_swapchain(const HWND window, D3D12Queue* const queue,
         }
     }
 
-    m_window = window;
+    m_host_hwnd = window;
     m_swapchain_dims = dims;
-    ;
+
     m_swapchain_queue = queue;
     *frame_index = m_swapchain->GetCurrentBackBufferIndex();
 
@@ -1623,25 +1623,8 @@ void D3D12Context::bind_index_buffer(ID3D12GraphicsCommandList7* cmd_list,
     cmd_list->IASetIndexBuffer(&view);
 }
 
-bool D3D12Context::init_imgui()
+bool D3D12Context::init_imgui_backends()
 {
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
-
-    ImGui::StyleColorsDark();
-
-    assert(m_window);
-
-    if (!ImGui_ImplWin32_Init(m_window))
-    {
-        OutputDebugStringA("ImGui ERROR: ImGui_ImplWin32_Init failed\n");
-        return false;
-    }
-
     D3D12_DESCRIPTOR_HEAP_DESC heap_desc{
         .Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
         // This should match swapchain buffer count

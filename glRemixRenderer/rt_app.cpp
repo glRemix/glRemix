@@ -10,14 +10,13 @@
 #include <fastgltf/tools.hpp>
 
 #include <shared/math_utils.h>
+#include <shared/debug_utils.h>
 
 #include "dx/d3d12_barrier.h"
 
 #include <DirectXTex.h>
 
 #include "debug_log.h"
-
-glRemix::glDriver glRemix::glRemixRenderer::sm_driver;
 
 void glRemix::glRemixRenderer::create_environment_map(ID3D12GraphicsCommandList7* cmd_list,
                                                       const char* path)
@@ -141,6 +140,12 @@ void glRemix::glRemixRenderer::create_mesh_record_buffer()
 
 void glRemix::glRemixRenderer::create()
 {
+    // gl
+    m_debug_window.init_imgui_frontends();
+    m_driver.init(m_debug_window.m_hwnd);
+
+    // dx
+
     for (UINT i = 0; i < m_frames_in_flight; i++)
     {
         THROW_IF_FALSE(m_context.create_command_allocator(&m_cmd_pools[i], &m_gfx_queue,
@@ -460,7 +465,7 @@ void glRemix::glRemixRenderer::create()
 
 void glRemix::glRemixRenderer::create_pending_buffers(ID3D12GraphicsCommandList7* cmd_list)
 {
-    glState& state = sm_driver.get_state();
+    glState& state = m_driver.get_state();
     if (state.m_pending_geometries.empty())
     {
         return;
@@ -548,7 +553,7 @@ void glRemix::glRemixRenderer::create_pending_buffers(ID3D12GraphicsCommandList7
 
 bool glRemix::glRemixRenderer::create_pending_textures(ID3D12GraphicsCommandList7* cmd_list)
 {
-    glState& state = sm_driver.get_state();
+    glState& state = m_driver.get_state();
     if (state.m_pending_textures.empty())
     {
         return false;
@@ -789,7 +794,7 @@ static D3D12_RAYTRACING_INSTANCE_DESC mv_to_instance_desc(const XMFLOAT4X4& mv)
 
 void glRemix::glRemixRenderer::handle_per_frame_replacement()
 {
-    glState& state = sm_driver.get_state();
+    glState& state = m_driver.get_state();
 
     if (state.m_mesh_replacement_tracker.empty())
     {
@@ -813,7 +818,7 @@ void glRemix::glRemixRenderer::handle_per_frame_replacement()
 
 UINT glRemix::glRemixRenderer::collect_expired_meshes()
 {
-    glState& state = sm_driver.get_state();
+    glState& state = m_driver.get_state();
 
     UINT count = 0;
 
@@ -844,7 +849,7 @@ UINT glRemix::glRemixRenderer::collect_expired_meshes()
 // replaces asset in scene based on file provided by user in ImGui
 void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset_path)
 {
-    glState& state = sm_driver.get_state();
+    glState& state = m_driver.get_state();
 
     UINT32 old_mesh_mv_idx = -1;
     UINT32 old_mesh_mat_idx = -1;
@@ -960,7 +965,7 @@ void glRemix::glRemixRenderer::transform_replacement_vertices(std::vector<Vertex
 // builds top level acceleration structure with blas buffer (can be called each frame likely)
 void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
 {
-    const auto state = sm_driver.get_state();
+    const auto state = m_driver.get_state();
 
     assert(!u64_overflows_u32(state.m_meshes.size()));
     const UINT instance_count = static_cast<UINT>(state.m_meshes.size());
@@ -1104,7 +1109,7 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
 void glRemix::glRemixRenderer::render()
 {
     // Read GL stream and set resources accordingly
-    auto& state = sm_driver.get_state();
+    auto& state = m_driver.get_state();
 
     if (state.m_current_frame % FRAME_LENIENCY == 0)
     {
@@ -1119,14 +1124,15 @@ void glRemix::glRemixRenderer::render()
               .size();  // required for setting mesh record pointers properly within driver
     state.m_num_textures = m_textures.size();
     m_texture_upload_buffers[get_frame_index()].clear();
-    sm_driver.process_stream();
+    m_driver.process_stream();
 
     XMUINT2 dims;
     if (state.m_create_context)
     {
-        if (dx::D3D12Context::s_get_window_dimensions(&dims, state.hwnd) && dims.x > 0 && dims.y > 0)
+        if (dx::D3D12Context::s_get_window_dimensions(&dims, state.m_host_hwnd) && dims.x > 0
+            && dims.y > 0)
         {
-            create_swapchain_and_rts(state.hwnd);
+            create_swapchain_and_rts(state.m_host_hwnd);
             state.m_swapchain_creation_deferred = false;
         }
         else
@@ -1181,7 +1187,7 @@ void glRemix::glRemixRenderer::render()
     const auto swapchain_idx = m_context.get_swapchain_index();
 
     XMUINT2 win_dims{};
-    m_context.s_get_window_dimensions(&win_dims, m_context.get_window());
+    m_context.s_get_window_dimensions(&win_dims, m_context.get_host_window_handle());
 
     // Set viewport, scissor
     const D3D12_VIEWPORT viewport{
@@ -1323,6 +1329,13 @@ void glRemix::glRemixRenderer::render()
 
     m_descriptor_pager.copy_pages_to_gpu(m_context, &m_GPU_descriptor_heap,
                                          reserved_descriptor_offset);
+
+    MSG msg;
+    while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE))
+    {
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+    }
 
     m_context.start_imgui_frame();
     {
@@ -1594,6 +1607,7 @@ void glRemix::glRemixRenderer::render()
 
 void glRemix::glRemixRenderer::destroy()
 {
+    m_driver.destroy();
     m_context.destroy_imgui();
 }
 
@@ -1602,14 +1616,15 @@ void glRemix::glRemixRenderer::create_swapchain_and_rts(HWND hwnd)
     THROW_IF_FALSE(m_context.create_swapchain(hwnd, &m_gfx_queue, &m_frame_index));
     THROW_IF_FALSE(
         m_context.create_swapchain_descriptors(m_swapchain_descriptors.data(), &m_rtv_heap));
-    THROW_IF_FALSE(m_context.init_imgui());
+
+    THROW_IF_FALSE(m_context.init_imgui_backends());
     create_uav_rt();
 }
 
 void glRemix::glRemixRenderer::create_uav_rt()
 {
     XMUINT2 win_dims{};
-    THROW_IF_FALSE(m_context.s_get_window_dimensions(&win_dims, m_context.get_window()));
+    THROW_IF_FALSE(m_context.s_get_window_dimensions(&win_dims, m_context.get_host_window_handle()));
 
     const dx::TextureDesc uav_rt_desc{
         .width = win_dims.x,

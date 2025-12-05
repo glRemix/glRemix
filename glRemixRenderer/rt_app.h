@@ -22,7 +22,13 @@ namespace glRemix
 {
 class glRemixRenderer : public Application
 {
-    static glDriver sm_driver;
+    glDriver m_driver;
+
+    DebugWindow m_debug_window;
+
+    // TODO: Expose this parameter in debug window?
+    static constexpr UINT FRAME_LENIENCY = 600;
+    UINT m_current_frame = 0;
 
     std::array<dx::D3D12CommandAllocator, m_frames_in_flight> m_cmd_pools{};
 
@@ -83,14 +89,8 @@ class glRemixRenderer : public Application
     FreeListVector<std::array<BufferAndDescriptor, m_frames_in_flight>> m_material_buffers;
     std::array<BufferAndDescriptor, m_frames_in_flight> m_light_buffer;
 
-    DebugWindow m_debug_window;
-
     void create_material_buffer();
     void create_mesh_record_buffer();
-
-    // TODO: Expose this parameter in debug window?
-    static constexpr UINT FRAME_LENIENCY = 600;
-    UINT m_current_frame = 0;
 
     void create_swapchain_and_rts(HWND hwnd);
     void create_uav_rt();
