@@ -1,7 +1,6 @@
 #pragma once
 #include <DirectXMath.h>
 #include <vector>
-#include <limits.h>
 #include "dx/d3d12_buffer.h"
 #include "dx/d3d12_descriptor.h"
 #include "dx/d3d12_texture.h"
@@ -36,14 +35,14 @@ struct BufferAndDescriptor
 {
     dx::D3D12Buffer buffer;
     dx::D3D12Descriptor descriptor;
-    UINT page_index = UINT_MAX;  // explicit define to max unsigned int
+    UINT page_index = ~0u;
 };
 
 struct TextureAndDescriptor
 {
     dx::D3D12Texture texture;
     dx::D3D12Descriptor descriptor;
-    UINT page_index = UINT_MAX;
+    UINT page_index = ~0u;
 };
 
 struct MeshResources
@@ -60,7 +59,7 @@ struct PendingGeometry
     UINT64 hash;
     UINT32 mat_idx;
     UINT32 mv_idx;
-    UINT32 replace_idx = -1;
+    UINT32 replace_idx = ~0u;
 };
 
 struct PendingTexture

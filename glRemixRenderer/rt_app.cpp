@@ -347,14 +347,13 @@ void glRemix::glRemixRenderer::create()
     THROW_IF_FALSE(m_context.load_blob_from_file(rt_path.c_str(),
                                                  raytracing_shaders.ReleaseAndGetAddressOf()));
     dx::RayTracingPipelineDesc rt_desc = dx::make_ray_tracing_pipeline_desc(
-        L"RayGenMain", L"MissMain", L"ClosestHitMain"
-        // TODO: Add Any Hit shader
-        // TODO: Add Intersection shader if doing non-triangle geometry
-    );
+        L"RayGenMain", L"MissMain", L"ClosestHitMain",
+        nullptr,  // TODO: Add Any Hit shader
+        nullptr,  // TODO: Add Intersection shader if doing non-triangle geometry
+        L"ShadowMiss");
     rt_desc.global_root_signature = m_rt_global_root_signature.Get();
-    rt_desc.max_recursion_depth = 1;
-    // Make sure these match in the shader
-    rt_desc.payload_size = sizeof(RayPayload);
+    rt_desc.max_recursion_depth = 2;
+    rt_desc.payload_size = std::max(sizeof(RayPayload), sizeof(ShadowPayload));
     rt_desc.attribute_size = sizeof(float) * 2;
     THROW_IF_FALSE(m_context.create_raytracing_pipeline(rt_desc, raytracing_shaders.Get(),
                                                         m_rt_pipeline.ReleaseAndGetAddressOf(),
@@ -368,16 +367,25 @@ void glRemix::glRemixRenderer::create()
 
         constexpr UINT64 shader_identifier_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
         constexpr UINT64 shader_table_alignment = D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT;
+        constexpr UINT64 shader_record_alignment = D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT;
+
+        const UINT64 miss_record_stride = align_u64(shader_identifier_size, shader_record_alignment);
+        const UINT64 hit_group_record_stride = align_u64(shader_identifier_size,
+                                                         shader_record_alignment);
 
         // Calculate aligned offsets for each table
         m_raygen_shader_table_offset = 0;
+
         m_miss_shader_table_offset = align_u64(shader_identifier_size, shader_table_alignment);
+        m_miss_shader_table_stride = miss_record_stride;
+
         m_hit_group_shader_table_offset = align_u64(m_miss_shader_table_offset
-                                                        + shader_identifier_size,
+                                                        + 2 * miss_record_stride,
                                                     shader_table_alignment);
+        m_hit_group_shader_table_stride = hit_group_record_stride;
 
         UINT64 total_shader_table_size = align_u64(m_hit_group_shader_table_offset
-                                                       + shader_identifier_size,
+                                                       + hit_group_record_stride,
                                                    shader_table_alignment);
 
         // Create single buffer for all shader tables
@@ -397,10 +405,16 @@ void glRemix::glRemixRenderer::create()
         memcpy(static_cast<UINT8*>(cpu_ptr) + m_raygen_shader_table_offset, raygen_identifier,
                shader_identifier_size);
 
+        // MissMain idx 0, ShadowMiss idx 1
         void* miss_identifier = rt_pipeline_properties->GetShaderIdentifier(L"MissMain");
         assert(miss_identifier);
         memcpy(static_cast<UINT8*>(cpu_ptr) + m_miss_shader_table_offset, miss_identifier,
                shader_identifier_size);
+
+        void* shadow_miss_identifier = rt_pipeline_properties->GetShaderIdentifier(L"ShadowMiss");
+        assert(shadow_miss_identifier);
+        memcpy(static_cast<UINT8*>(cpu_ptr) + m_miss_shader_table_offset + miss_record_stride,
+               shadow_miss_identifier, shader_identifier_size);
 
         void* hit_group_identifier = rt_pipeline_properties->GetShaderIdentifier(L"HG_Default");
         assert(hit_group_identifier);
@@ -1004,7 +1018,8 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
         const auto blas_addr = m_mesh_resources[mesh.blas_vb_ib_idx].blas.get_gpu_address();
         assert(blas_addr);
 
-        D3D12_RAYTRACING_INSTANCE_DESC desc = mv_to_instance_desc(state.m_matrix_pool[mesh.mv_idx]);
+        D3D12_RAYTRACING_INSTANCE_DESC desc = mv_to_instance_desc(
+            state.m_matrix_pool[mesh_copy.mv_idx]);
 
         desc.InstanceID = valid_instance_count;
         desc.InstanceMask = 0xFF;
@@ -1257,7 +1272,7 @@ void glRemix::glRemixRenderer::render()
         GPUMeshRecord gpu_mesh;
         // Materials
         {
-            auto buffer_index = mesh.mat_idx / MATERIALS_PER_BUFFER;
+            auto buffer_index = mesh_copy.mat_idx / MATERIALS_PER_BUFFER;
             const auto& material_buffer = m_material_buffers[buffer_index][get_frame_index()];
             auto page_index = material_buffer.page_index;
             auto offset = m_descriptor_pager.calculate_global_offset(dx::DescriptorPager::MATERIALS,
@@ -1265,7 +1280,7 @@ void glRemix::glRemixRenderer::render()
             // Offset in page + global page offset + reserved descriptors
             gpu_mesh.mat_buffer_idx = material_buffer.descriptor.offset + offset
                                       + reserved_descriptor_offset;
-            gpu_mesh.mat_idx = mesh.mat_idx % MATERIALS_PER_BUFFER;
+            gpu_mesh.mat_idx = mesh_copy.mat_idx % MATERIALS_PER_BUFFER;
         }
         // VB and IB
         {
@@ -1286,20 +1301,20 @@ void glRemix::glRemixRenderer::render()
             gpu_mesh.tex_idx = 0xFFFFFFFFu;
             gpu_mesh.tex_idx_2 = 0xFFFFFFFFu;
 
-            if (mesh.tex_idx != 0xFFFFFFFFu && m_texture_map.contains(mesh.tex_idx))
+            if (mesh_copy.tex_idx != 0xFFFFFFFFu && m_texture_map.contains(mesh_copy.tex_idx))
             {
-                auto tex_desc_offset = m_texture_map[mesh.tex_idx].descriptor.offset;
-                auto tex_page_index = m_texture_map[mesh.tex_idx].page_index;
+                auto tex_desc_offset = m_texture_map[mesh_copy.tex_idx].descriptor.offset;
+                auto tex_page_index = m_texture_map[mesh_copy.tex_idx].page_index;
                 auto tex_offset = m_descriptor_pager
                                       .calculate_global_offset(dx::DescriptorPager::TEXTURES,
                                                                tex_page_index);
                 gpu_mesh.tex_idx = tex_desc_offset + tex_offset + reserved_descriptor_offset;
             }
 
-            if (mesh.tex_idx_2 != 0xFFFFFFFFu && m_texture_map.contains(mesh.tex_idx_2))
+            if (mesh_copy.tex_idx_2 != 0xFFFFFFFFu && m_texture_map.contains(mesh_copy.tex_idx_2))
             {
-                auto tex_desc_offset = m_texture_map[mesh.tex_idx_2].descriptor.offset;
-                auto tex_page_index = m_texture_map[mesh.tex_idx_2].page_index;
+                auto tex_desc_offset = m_texture_map[mesh_copy.tex_idx_2].descriptor.offset;
+                auto tex_page_index = m_texture_map[mesh_copy.tex_idx_2].page_index;
                 auto tex_offset = m_descriptor_pager
                                       .calculate_global_offset(dx::DescriptorPager::TEXTURES,
                                                                tex_page_index);
@@ -1450,13 +1465,13 @@ void glRemix::glRemixRenderer::render()
             },
             .MissShaderTable{
                 .StartAddress = shader_table_base_address + m_miss_shader_table_offset,
-                .SizeInBytes = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES,
-                .StrideInBytes = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES,
+                .SizeInBytes = 2 * m_miss_shader_table_stride,
+                .StrideInBytes = m_miss_shader_table_stride,
             },
             .HitGroupTable{
                 .StartAddress = shader_table_base_address + m_hit_group_shader_table_offset,
-                .SizeInBytes = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES,
-                .StrideInBytes = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES,
+                .SizeInBytes = m_hit_group_shader_table_stride,
+                .StrideInBytes = m_hit_group_shader_table_stride,
             },
             .Width = win_dims.x,
             .Height = win_dims.y,

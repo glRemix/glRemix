@@ -3,7 +3,6 @@
 #include <tsl/robin_map.h>
 #include <array>
 #include <vector>
-#include <limits>
 
 #include "generated/glext_enums.inl"
 
@@ -16,7 +15,7 @@ namespace glRemix
 
 struct glState
 {
-    UINT64 m_current_frame = UINT_MAX;
+    UINT64 m_current_frame = ~0u;
 
     XMFLOAT4 m_color = { 1.0f, 1.0f, 1.0f, 1.0f };
     XMFLOAT3 m_normal = { 0.0f, 0.0f, 1.0f };  // Default according to spec
@@ -24,7 +23,7 @@ struct glState
     XMFLOAT2 m_uv2 = { 0.0f, 0.0f };
     XMFLOAT4 m_clear_color = { 0.0f, 0.0f, 0.0f, 0.0f };
     Material m_material{};  // global material
-    size_t m_offset = 0;    // tracked by state for display list purposes
+    size_t m_offset = ~0u;  // tracked by state for display list purposes
 
     HWND m_host_hwnd = nullptr;
     const HWND m_local_hwnd;  // hwnd created for this process
@@ -35,8 +34,8 @@ struct glState
     // display lists
     bool m_in_call = false;
     UINT32 m_execution_mode = GL_COMPILE_AND_EXECUTE;
-    UINT32 m_list_index = 0;
-    size_t m_display_list_begin = 0;
+    UINT32 m_list_index = ~0u;
+    size_t m_display_list_begin = ~0u;
     void* m_buffer_begin = nullptr;
 
     tsl::robin_map<int, std::vector<UINT8>> m_display_lists{};
@@ -62,11 +61,11 @@ struct glState
     std::vector<MeshRecord> m_meshes{};
 
     tsl::robin_map<UINT64, MeshRecord> m_mesh_map{};
-    UINT32 m_num_mesh_resources = 0;
+    UINT32 m_num_mesh_resources = ~0u;
     std::vector<PendingGeometry> m_pending_geometries{};
 
 #ifdef GLREMIX_DYNAMIC_MESH_CAP
-    size_t m_last_rendered_mesh_count = 0;
+    size_t m_last_rendered_mesh_count = ~0u;
     static constexpr float MESH_CAP_RATIO = 2.0f;
 #endif
 

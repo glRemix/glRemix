@@ -466,6 +466,30 @@ static void handle_texcoord2f(const GLCommandContext& ctx, const void* data)
     }
 }
 
+static void handle_vertex2fv(const GLCommandContext& ctx, const void* data)
+{
+    const auto* cmd = static_cast<const GLVertex2fvCommand*>(data);
+
+    const Vertex vertex{ .position = fv_to_xmf3(GLVec3f{ cmd->x, cmd->y, 0.0f }),
+                         .color = ctx.state.m_color,
+                         .normal = ctx.state.m_normal,
+                         .uv = ctx.state.m_uv,
+                         .uv2 = ctx.state.m_uv2 };
+    ctx.state.t_vertices.push_back(vertex);
+}
+
+static void handle_color3ub(const GLCommandContext& ctx, const void* data)
+{
+    const auto* cmd = static_cast<const GLColor3ubCommand*>(data);
+    ctx.state.m_color = { cmd->x, cmd->y, cmd->z, ctx.state.m_color.w };
+}
+
+static void handle_normal3fv(const GLCommandContext& ctx, const void* data)
+{
+    const auto* cmd = static_cast<const GLNormal3fvCommand*>(data);
+    ctx.state.m_normal = fv_to_xmf3(*cmd);
+}
+
 // -----------------------------------------------------------------------------
 // MATERIAL COLOR
 // -----------------------------------------------------------------------------
@@ -901,6 +925,17 @@ static void handle_mult_matrix(const GLCommandContext& ctx, const void* data)
     ctx.state.m_matrix_stack.mul_set(ctx.state.m_matrix_mode, cmd->m);
 }
 
+static void handle_mult_matrixd(const GLCommandContext& ctx, const void* data)
+{
+    const auto* cmd = static_cast<const GLMultMatrixdCommand*>(data);
+    std::array<float, 16> m;
+    for (size_t i = 0; i < m.size(); ++i)
+    {
+        m[i] = static_cast<float>(cmd->m[i]);
+    }
+    ctx.state.m_matrix_stack.mul_set(ctx.state.m_matrix_mode, m.data());
+}
+
 static void handle_push_matrix(const GLCommandContext& ctx, const void* data)
 {
     ctx.state.m_matrix_stack.push(ctx.state.m_matrix_mode);
@@ -918,6 +953,17 @@ static void handle_translate(const GLCommandContext& ctx, const void* data)
     const float x = cmd->t.x;
     const float y = cmd->t.y;
     const float z = cmd->t.z;
+
+    ctx.state.m_matrix_stack.translate(ctx.state.m_matrix_mode, x, y, z);
+}
+
+static void handle_translated(const GLCommandContext& ctx, const void* data)
+{
+    const auto* cmd = static_cast<const GLTranslatedCommand*>(data);
+
+    const float x = static_cast<float>(cmd->t.x);
+    const float y = static_cast<float>(cmd->t.y);
+    const float z = static_cast<float>(cmd->t.z);
 
     ctx.state.m_matrix_stack.translate(ctx.state.m_matrix_mode, x, y, z);
 }
@@ -1186,9 +1232,12 @@ void glRemix::glDriver::init_handlers()
     gl_command_handlers[static_cast<size_t>(GLCMD_END)] = &handle_end;
     gl_command_handlers[static_cast<size_t>(GLCMD_VERTEX2F)] = &handle_vertex2f;
     gl_command_handlers[static_cast<size_t>(GLCMD_VERTEX3F)] = &handle_vertex3f;
+    gl_command_handlers[static_cast<size_t>(GLCMD_VERTEX2FV)] = &handle_vertex2fv;
     gl_command_handlers[static_cast<size_t>(GLCMD_COLOR3F)] = &handle_color3f;
+    gl_command_handlers[static_cast<size_t>(GLCMD_COLOR3UB)] = &handle_color3ub;
     gl_command_handlers[static_cast<size_t>(GLCMD_COLOR4F)] = &handle_color4f;
     gl_command_handlers[static_cast<size_t>(GLCMD_NORMAL3F)] = &handle_normal3f;
+    gl_command_handlers[static_cast<size_t>(GLCMD_NORMAL3FV)] = &handle_normal3fv;
     gl_command_handlers[static_cast<size_t>(GLCMD_TEXCOORD2F)] = &handle_texcoord2f;
 
     // MATERIALS LIGHTS
@@ -1223,9 +1272,11 @@ void glRemix::glDriver::init_handlers()
     gl_command_handlers[static_cast<size_t>(GLCMD_LOAD_IDENTITY)] = &handle_load_identity;
     gl_command_handlers[static_cast<size_t>(GLCMD_LOAD_MATRIX)] = &handle_load_matrix;
     gl_command_handlers[static_cast<size_t>(GLCMD_MULT_MATRIX)] = &handle_mult_matrix;
+    gl_command_handlers[static_cast<size_t>(GLCMD_MULTMATRIXD)] = &handle_mult_matrixd;
     gl_command_handlers[static_cast<size_t>(GLCMD_PUSH_MATRIX)] = &handle_push_matrix;
     gl_command_handlers[static_cast<size_t>(GLCMD_POP_MATRIX)] = &handle_pop_matrix;
     gl_command_handlers[static_cast<size_t>(GLCMD_TRANSLATE)] = &handle_translate;
+    gl_command_handlers[static_cast<size_t>(GLCMD_TRANSLATED)] = &handle_translated;
     gl_command_handlers[static_cast<size_t>(GLCMD_ROTATE)] = &handle_rotate;
     gl_command_handlers[static_cast<size_t>(GLCMD_SCALE)] = &handle_scale;
     gl_command_handlers[static_cast<size_t>(GLCMD_ORTHO)] = &handle_ortho;
