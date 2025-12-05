@@ -4,12 +4,13 @@
 
 #include "structs.h"
 #include <array>
+#include <thread>
 #include <tsl/robin_map.h>
 
 namespace glRemix
 {
-constexpr wchar_t k_LOCAL_WINDOW_CLASS_DEFAULT_NAME[] = L"glRemix Window Class";
-constexpr wchar_t k_LOCAL_WINDOW_DEFAULT_TEXT[] = L"glRemix Window";
+constexpr WCHAR k_LOCAL_WINDOW_CLASS_DEFAULT_NAME[] = L"glRemix Window Class";
+constexpr WCHAR k_LOCAL_WINDOW_DEFAULT_TEXT[] = L"glRemix Window";
 
 class DebugWindow
 {
@@ -37,15 +38,18 @@ private:
 
     float m_fps = 0.0f;
 
-    UINT64 m_mesh_ID_to_replace = -1;
-    std::array<char, 256> m_asset_path{};
-    std::function<void(UINT64 mesh_id, const char* asset_path)>
+    UINT64 m_mesh_ID_to_replace = UINT_MAX;
+    std::array<CHAR, 256> m_asset_path{};
+    std::function<void(UINT64 mesh_id, const CHAR* asset_path)>
         m_replace_mesh_callback;  // replace_mesh function from rt_app
 
     UINT64 m_selected_mesh_for_window = ~0ull;
 
-    const uint32_t mk_initialPoxX = 0;
-    const uint32_t mk_initialPosY = 0;
+    std::atomic<bool> m_dialog_open{ false };  // prevents multiple dialogs
+    std::thread m_dialog_thread;
+
+    const UINT32 mk_initialPoxX = 0;
+    const UINT32 mk_initialPosY = 0;
 
     void render_performance_stats();
     void render_settings();
@@ -69,7 +73,7 @@ public:
     void render(DebugInfo debug_info);
 
     void set_replace_mesh_callback(
-        std::function<void(UINT64 mesh_id, const char* asset_path)> callback);
+        std::function<void(UINT64 mesh_id, const CHAR* asset_path)> callback);
     void set_mesh_stats(const MeshStats& mesh_stats);
 
     void destroy();

@@ -1,12 +1,13 @@
 #include "debug_window.h"
 
-#include <utility>
 #include <imgui.h>
 #include <imgui_impl_win32.h>
 #include <imgui_internal.h>
 #include <cstdio>
+#include <commdlg.h>
 
 #include <shared/debug_utils.h>
+#include <shared/math_utils.h>
 
 #include "debug_log.h"
 
@@ -22,11 +23,15 @@ LRESULT CALLBACK s_local_window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
         default: break;  // TODO: case on msg for custom input handling
     }
 
-    // forward to ImGui
-    ImGuiIO& io = ImGui::GetIO();
-    if (ImGui_ImplWin32_WndProcHandlerEx(hwnd, msg, wParam, lParam, io))
+    if (ImGui::GetCurrentContext() != NULL)
     {
-        return 1;
+        // forward to ImGui
+        static ImGuiIO& io = ImGui::GetIO();
+
+        if (ImGui_ImplWin32_WndProcHandlerEx(hwnd, msg, wParam, lParam, io))
+        {
+            return 1;
+        }
     }
 
     // it is required to default handle all callbacks that have reached this point
@@ -79,6 +84,13 @@ void glRemix::DebugWindow::destroy()
         m_hwnd = nullptr;
     }
     UnregisterClassW(k_LOCAL_WINDOW_CLASS_DEFAULT_NAME, GetModuleHandle(nullptr));
+
+    if (m_dialog_thread.joinable())
+    {
+        HANDLE_LOGIC_ERROR("glRemixRenderer - Dialog thread has not terminated properly.");
+        // TODO: consistent shutdown of dialog thread.
+        m_dialog_thread.join();
+    }
 }
 
 void DebugWindow::render(const DebugInfo debug_info)
@@ -118,7 +130,7 @@ void DebugWindow::render(const DebugInfo debug_info)
 
 // get replace_mesh function from rt_app
 void DebugWindow::set_replace_mesh_callback(
-    std::function<void(UINT64 mesh_id, const char* asset_path)> callback)
+    std::function<void(UINT64 mesh_id, const CHAR* asset_path)> callback)
 {
     m_replace_mesh_callback = callback;
 }
@@ -158,6 +170,26 @@ void DebugWindow::render_mesh_ids(const MeshRecord* records, const size_t count)
     }
 }
 
+/**
+ * @brief
+ * @param local_hwnd
+ * @param out_encoded_path: Win32 functions use UTF-16
+ * @return
+ */
+static bool s_open_file_dialog_native_win32(const HWND& local_hwnd,
+                                            std::array<WCHAR, 256>* out_encoded_path)
+{
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = local_hwnd;
+    ofn.lpstrFilter = L"GLTF Files\0*.gltf;*.glb\0";
+    ofn.lpstrFile = static_cast<LPTSTR>(out_encoded_path->data());
+    ofn.nMaxFile = static_cast<DWORD>(out_encoded_path->size());
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+    return GetOpenFileNameW(&ofn);
+}
+
 void DebugWindow::render_mesh_options_window(tsl::robin_map<UINT64, MeshRecord>* m_mesh_map)
 {
     if (m_selected_mesh_for_window == ~0ull)
@@ -172,7 +204,7 @@ void DebugWindow::render_mesh_options_window(tsl::robin_map<UINT64, MeshRecord>*
         return;
     }
 
-    char title[64];
+    static CHAR title[64];
     snprintf(title, sizeof(title), "Asset Options: %llu", m_selected_mesh_for_window);
 
     // find position of main window
@@ -186,7 +218,7 @@ void DebugWindow::render_mesh_options_window(tsl::robin_map<UINT64, MeshRecord>*
         ImGui::SetNextWindowPos(new_pos, ImGuiCond_Always);
     }
 
-    bool is_open = true;
+    static bool is_open = true;
     if (ImGui::Begin(title, &is_open, ImGuiWindowFlags_AlwaysAutoResize))
     {
         auto& mesh = m_mesh_map->at(m_selected_mesh_for_window);
@@ -198,6 +230,40 @@ void DebugWindow::render_mesh_options_window(tsl::robin_map<UINT64, MeshRecord>*
 
         ImGui::Text("Asset Replacement - Path to New GLTF File:");
         ImGui::InputText("##ReplacementPath", m_asset_path.data(), sizeof(m_asset_path));
+
+        ImGui::SameLine();
+        if (ImGui::Button("Browse"))
+        {
+            if (!m_dialog_open.exchange(true))
+            {
+                static std::array<WCHAR, 256> encoded_path = {};
+                utf8_to_wide(m_asset_path.data(), encoded_path.data(), encoded_path.size());
+
+                auto handle_file_dialog_threading_fn = [this]()
+                {
+                    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+
+                    if (SUCCEEDED(hr))
+                    {
+                        if (s_open_file_dialog_native_win32(this->m_hwnd, &encoded_path))
+                        {
+                            wide_to_utf8(encoded_path.data(), this->m_asset_path.data(),
+                                         this->m_asset_path.size());
+                        }
+                        this->m_dialog_open.store(false);
+                    }
+
+                    CoUninitialize();
+                };
+
+                if (m_dialog_thread.joinable())
+                {
+                    m_dialog_thread.join();
+                }
+
+                m_dialog_thread = std::thread(handle_file_dialog_threading_fn);
+            }
+        }
 
         if (ImGui::Button("Replace Asset"))
         {
