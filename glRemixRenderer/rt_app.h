@@ -72,8 +72,6 @@ class glRemixRenderer : public Application
         m_mesh_replacement_tracker;  // maps index in m_meshes of mesh to be replaced, with
                                      // replacement mesh
 
-    MeshLoader m_mesh_loader;
-
     // Textures
     std::array<std::vector<dx::D3D12Buffer>, m_frames_in_flight> m_texture_upload_buffers;
     FreeListVector<TextureAndDescriptor> m_textures;

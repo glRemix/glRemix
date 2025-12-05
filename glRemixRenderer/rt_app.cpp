@@ -908,10 +908,11 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
     std::vector<Material> new_materials;
     PendingTexture new_texture{};
 
-    THROW_IF_FALSE(m_mesh_loader.load_mesh_from_path(new_asset_path_fs, new_vertices, new_indices,
-                                                     new_texture, min_bb, max_bb));
+    THROW_IF_FALSE(load_mesh_from_path(new_asset_path_fs, new_vertices, new_indices, new_texture,
+                                       min_bb, max_bb));
 
     // set actual index of texture and push to pending textures
+    assert(!u64_overflows_u32(state.m_pending_textures.size()));
     UINT32 new_texture_idx = static_cast<UINT32>(state.m_pending_textures.size());
     new_texture.index = new_texture_idx;
     state.m_pending_textures.emplace(new_texture_idx, std::move(new_texture));

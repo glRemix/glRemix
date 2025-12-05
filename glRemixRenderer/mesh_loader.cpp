@@ -11,11 +11,10 @@
 #include <cstring>
 #include <memory>
 
-bool glRemix::MeshLoader::load_mesh_from_path(std::filesystem::path asset_path,
-                                              std::vector<Vertex>& out_vertices,
-                                              std::vector<UINT32>& out_indices,
-                                              PendingTexture& out_texture, XMFLOAT3& out_min_bb,
-                                              XMFLOAT3& out_max_bb)
+bool glRemix::load_mesh_from_path(std::filesystem::path asset_path,
+                                  std::vector<Vertex>& out_vertices,
+                                  std::vector<UINT32>& out_indices, PendingTexture& out_texture,
+                                  XMFLOAT3& out_min_bb, XMFLOAT3& out_max_bb)
 {
     fastgltf::Parser parser;
 
@@ -51,7 +50,7 @@ bool glRemix::MeshLoader::load_mesh_from_path(std::filesystem::path asset_path,
 
             if (FAILED(hr))
             {
-                printf("Failed to load texture file: %s\n", path.string().c_str());
+                // texture loading failed
                 return false;
             }
         }
@@ -59,17 +58,16 @@ bool glRemix::MeshLoader::load_mesh_from_path(std::filesystem::path asset_path,
         // assume that scratch_image is the correct format
         const Image* img_data = scratch_image.GetImage(0, 0, 0);
         const size_t byte_size = img_data->slicePitch;
-        auto pixel_buffer = std::make_unique<uint8_t[]>(byte_size);
-        memcpy(pixel_buffer.get(), img_data->pixels, byte_size);
 
-        out_texture.index = static_cast<UINT32>(i);
-        out_texture.desc = {
-            static_cast<UINT32>(img_data->width), static_cast<UINT32>(img_data->height), 1,    1,
-            DXGI_FORMAT_R8G8B8A8_UNORM,           D3D12_RESOURCE_DIMENSION_TEXTURE2D,    false
-        };
-        out_texture.pixels.assign(pixel_buffer.get(), pixel_buffer.get() + byte_size);
-
-        // m_owned_texture_buffers.emplace_back(std::move(pixel_buffer));
+        out_texture.index = i;
+        out_texture.desc = { static_cast<UINT32>(img_data->width),
+                             static_cast<UINT32>(img_data->height),
+                             1,
+                             1,
+                             metadata.format,
+                             D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+                             false };
+        out_texture.pixels.assign(scratch_image.GetPixels(), scratch_image.GetPixels() + byte_size);
     }
 
     // get first mesh only for now
@@ -92,42 +90,43 @@ bool glRemix::MeshLoader::load_mesh_from_path(std::filesystem::path asset_path,
 
         size_t index_offset = out_indices.size();
         out_indices.resize(index_offset + index_acc.count);
+
         if (index_acc.componentType == fastgltf::ComponentType::UnsignedByte
             || index_acc.componentType == fastgltf::ComponentType::UnsignedShort)
         {
             // handle u16 values
-            std::vector<uint16_t> temp(index_acc.count);
-            fastgltf::copyFromAccessor<uint16_t>(asset.get(), index_acc, temp.data());
-
-            for (size_t i = 0; i < index_acc.count; i++)
-            {
-                const uint32_t original_idx = temp[i];
-                // check if index is in bounds for this primitive
-                if (original_idx >= primitive_vertex_count)
-                {
-                    // index out of bounds
-                    return false;
-                }
-                out_indices[index_offset + i] = original_idx + static_cast<uint32_t>(vertex_offset);
-            }
+            size_t i = 0;
+            fastgltf::iterateAccessor<uint16_t>(asset.get(), index_acc,
+                                                [&](uint16_t idx)
+                                                {
+                                                    if (idx >= primitive_vertex_count)
+                                                    {
+                                                        // index out of bounds
+                                                        return false;
+                                                    }
+                                                    out_indices[index_offset + i]
+                                                        = static_cast<uint32_t>(idx)
+                                                          + static_cast<uint32_t>(vertex_offset);
+                                                    ++i;
+                                                });
         }
         else
         {
             // handle u32 values
-            std::vector<uint32_t> temp(index_acc.count);
-            fastgltf::copyFromAccessor<uint32_t>(asset.get(), index_acc, temp.data());
-
-            for (size_t i = 0; i < index_acc.count; i++)
-            {
-                const uint32_t original_idx = temp[i];
-                // check if index is in bounds for this primitive
-                if (original_idx >= primitive_vertex_count)
-                {
-                    // index out of bounds
-                    return false;
-                }
-                out_indices[index_offset + i] = original_idx + static_cast<uint32_t>(vertex_offset);
-            }
+            size_t i = 0;
+            fastgltf::iterateAccessor<uint32_t>(asset.get(), index_acc,
+                                                [&](uint32_t idx)
+                                                {
+                                                    if (idx >= primitive_vertex_count)
+                                                    {
+                                                        // index out of bounds
+                                                        return;
+                                                    }
+                                                    out_indices[index_offset + i]
+                                                        = idx
+                                                          + static_cast<uint32_t>(vertex_offset);
+                                                    ++i;
+                                                });
         }
 
         // get vertices

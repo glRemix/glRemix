@@ -2,6 +2,7 @@
 
 #include <utility>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include "debug_log.h"
 #include <cstdio>
 
@@ -100,8 +101,19 @@ void DebugWindow::render_mesh_options_window(tsl::robin_map<UINT64, MeshRecord>*
     char title[64];
     snprintf(title, sizeof(title), "Asset Options: %llu", m_selected_mesh_for_window);
 
+    // find position of main window
+    ImGuiWindow* main_imgui = ImGui::FindWindowByName("glRemix");
+    if (main_imgui)
+    {
+        ImVec2 pos = main_imgui->Pos;
+        ImVec2 size = main_imgui->Size;
+        ImVec2 new_pos(pos.x + size.x + 10.0f, pos.y);
+
+        ImGui::SetNextWindowPos(new_pos, ImGuiCond_Always);
+    }
+
     bool is_open = true;
-    if (ImGui::Begin(title, &is_open))
+    if (ImGui::Begin(title, &is_open, ImGuiWindowFlags_AlwaysAutoResize))
     {
         auto& mesh = m_mesh_map->at(m_selected_mesh_for_window);
 
