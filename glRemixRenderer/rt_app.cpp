@@ -826,12 +826,11 @@ void glRemix::glRemixRenderer::handle_per_frame_replacement()
         replacement_from_map->last_frame = state.m_current_frame;
 
         // check if the index is valid
-        if (index >= state.m_meshes.size())
+        if (index < state.m_meshes.size())
         {
-            continue;
+            state.m_meshes[index] = *replacement;
         }
 
-        state.m_meshes[index] = *replacement;
         ++it;
     }
 }
@@ -983,6 +982,7 @@ bool glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
     state.m_mesh_map.emplace(new_mesh_hash, new_mesh);
 
     state.m_pending_geometries.push_back(std::move(pending));
+    return true;
 }
 
 void glRemix::glRemixRenderer::transform_replacement_vertices(std::vector<Vertex>& gltf_vertices,

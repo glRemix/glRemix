@@ -5,7 +5,6 @@
 #include <imgui_internal.h>
 #include <cstdio>
 #include <commdlg.h>
-#include <sstream>
 
 #include <shared/debug_utils.h>
 #include <shared/math_utils.h>
@@ -87,7 +86,7 @@ void glRemix::DebugWindow::destroy()
 
     if (m_dialog_thread.joinable())
     {
-        HANDLE_LOGIC_ERROR("glRemixRenderer - Dialog thread has not terminated properly.");
+        // HANDLE_LOGIC_ERROR("glRemixRenderer - Dialog thread has not terminated properly.");
         // TODO: consistent shutdown of dialog thread.
         m_dialog_thread.join();
     }
@@ -96,7 +95,9 @@ void glRemix::DebugWindow::destroy()
 void DebugWindow::render(const DebugInfo debug_info)
 {
     ImGui::SetNextWindowPos(ImVec2(mk_initialPosY, mk_initialPosY), ImGuiCond_Once);
-    if (ImGui::Begin(k_IMGUI_MAIN_WINDOW_NAME, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+
+    bool asset_tab_active = false;
+    if (ImGui::Begin(k_IMGUI_MAIN_WINDOW_ID, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
     {
         if (ImGui::BeginTabBar("DebugTabs"))
         {
@@ -112,6 +113,7 @@ void DebugWindow::render(const DebugInfo debug_info)
             }
             if (ImGui::BeginTabItem("Asset List"))
             {
+                asset_tab_active = true;
                 const auto& mesh_records = debug_info.mesh_records;
                 render_mesh_ids(mesh_records.records, mesh_records.count);
                 ImGui::EndTabItem();
@@ -124,7 +126,12 @@ void DebugWindow::render(const DebugInfo debug_info)
             ImGui::EndTabBar();
         }
     }
-    render_mesh_options_window(debug_info.m_mesh_map);
+
+    if (m_is_mesh_options_window_active &= asset_tab_active; m_is_mesh_options_window_active)
+    {
+        render_mesh_options_window(debug_info.m_mesh_map);
+    }
+
     ImGui::End();
 }
 
@@ -158,18 +165,14 @@ void DebugWindow::render_mesh_ids(const MeshRecord* records, const size_t count)
             // for mesh options window
             if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
             {
-                m_selected_mesh_for_window = mesh_id;
-                m_show_mesh_replacement_error_message = false;
+                m_is_mesh_options_window_active = true;
+                m_mesh_ID_to_replace = mesh_id;
+                m_show_mesh_replacement_error_message = false;  // reset error status
             }
             else if (ImGui::Selectable(buf, is_selected))
             {
                 m_mesh_ID_to_replace = mesh_id;
-                m_show_mesh_replacement_error_message = false;
-
-                if (m_selected_mesh_for_window != ~0ull)
-                {
-                    m_selected_mesh_for_window = mesh_id;
-                }
+                m_show_mesh_replacement_error_message = false;  // reset error status
             }
         }
         ImGui::EndListBox();
@@ -187,6 +190,7 @@ static bool s_open_file_dialog_native_win32(const HWND& local_hwnd,
 {
     OPENFILENAMEW ofn{};
     ofn.lStructSize = sizeof(ofn);
+    ofn.lpstrTitle = k_WIN32_FILE_DIALOG_WINDOW_TITLE;
     ofn.hwndOwner = local_hwnd;
     ofn.lpstrFilter = L"GLTF Files\0*.gltf;*.glb\0";
     ofn.lpstrFile = static_cast<LPTSTR>(out_encoded_path->data());
@@ -198,98 +202,89 @@ static bool s_open_file_dialog_native_win32(const HWND& local_hwnd,
 
 void DebugWindow::render_mesh_options_window(tsl::robin_map<UINT64, MeshRecord>* m_mesh_map)
 {
-    if (m_selected_mesh_for_window == ~0ull)
-    {
-        return;
-    }
-
     // check if mesh still exists in map
-    if (!m_mesh_map->contains(m_selected_mesh_for_window))
+    if (!m_mesh_map->contains(m_mesh_ID_to_replace))
     {
-        m_selected_mesh_for_window = ~0ull;
+        m_is_mesh_options_window_active = false;
+        m_mesh_ID_to_replace = ~0ull;
         return;
     }
 
-    // find position of main window
-    ImGuiWindow* main_imgui = ImGui::FindWindowByName(k_IMGUI_MAIN_WINDOW_NAME);
-    if (main_imgui)
+    ImGui::Dummy(ImVec2(0.0f, 8.0));
+
+    if (ImGui::BeginChild(k_IMGUI_ASSET_OPTIONS_WINDOW_ID, ImVec2(0, 0),
+                          ImGuiChildFlags_FrameStyle | ImGuiChildFlags_AutoResizeY))
     {
-        ImVec2 pos = main_imgui->Pos;
-        ImVec2 size = main_imgui->Size;
-        ImVec2 new_pos(pos.x + size.x + 10.0f, pos.y);
+        static CHAR identifier[96];
+        snprintf(identifier, sizeof(identifier), "Asset Options: %llu", m_mesh_ID_to_replace);
 
-        ImGui::SetNextWindowPos(new_pos, ImGuiCond_Always);
-    }
-
-    static CHAR identifier[96];
-    snprintf(identifier, sizeof(identifier), "Asset Options: %llu###%s", m_selected_mesh_for_window,
-             k_IMGUI_ASSET_OPTIONS_WINDOW_NAME);
-
-    bool is_open = true;
-    if (ImGui::Begin(identifier, &is_open, ImGuiWindowFlags_AlwaysAutoResize))
-    {
-        auto& mesh = m_mesh_map->at(m_selected_mesh_for_window);
-
-        // visibility toggle option
-        ImGui::Checkbox("Visible", &mesh.visible);
-
-        ImGui::Separator();
-
-        ImGui::TextUnformatted("Asset Replacement - Path to New GLTF File:");
-        ImGui::InputText("##ReplacementPath", m_asset_path.data(), sizeof(m_asset_path));
-
-        ImGui::SameLine();
-        if (ImGui::Button("Browse"))
+        if (ImGui::CollapsingHeader(identifier, &m_is_mesh_options_window_active,
+                                    ImGuiTreeNodeFlags_DefaultOpen))
         {
-            if (!m_dialog_open.exchange(true))
-            {
-                static std::array<WCHAR, 256> encoded_path = {};
-                utf8_to_wide(m_asset_path.data(), encoded_path.data(), encoded_path.size());
+            auto& mesh = m_mesh_map->at(m_mesh_ID_to_replace);
 
-                auto handle_file_dialog_threading_fn = [this]()
+            // visibility toggle option
+            ImGui::Checkbox("Toggle Visibility", &mesh.visible);
+
+            ImGui::Separator();
+
+            ImGui::TextUnformatted("Asset Replacement - Path to New GLTF File:");
+            ImGui::InputText("##ReplacementPath", m_asset_path.data(), sizeof(m_asset_path));
+
+            ImGui::SameLine();
+            if (ImGui::Button("Browse"))
+            {
+                if (!m_dialog_open.exchange(true))
                 {
-                    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+                    static std::array<WCHAR, 256> encoded_path = {};
+                    utf8_to_wide(m_asset_path.data(), encoded_path.data(), encoded_path.size());
 
-                    if (SUCCEEDED(hr))
+                    auto handle_file_dialog_threading_fn = [this]()
                     {
-                        if (s_open_file_dialog_native_win32(this->m_hwnd, &encoded_path))
+                        HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+
+                        if (SUCCEEDED(hr))
                         {
-                            wide_to_utf8(encoded_path.data(), this->m_asset_path.data(),
-                                         this->m_asset_path.size());
+                            if (s_open_file_dialog_native_win32(this->m_hwnd, &encoded_path))
+                            {
+                                wide_to_utf8(encoded_path.data(), this->m_asset_path.data(),
+                                             this->m_asset_path.size());
+                            }
+                            this->m_dialog_open.store(false);
                         }
-                        this->m_dialog_open.store(false);
+
+                        CoUninitialize();
+                    };
+
+                    if (m_dialog_thread.joinable())
+                    {
+                        m_dialog_thread.join();
                     }
-
-                    CoUninitialize();
-                };
-                m_dialog_thread = std::thread(handle_file_dialog_threading_fn);
+                    m_dialog_thread = std::thread(handle_file_dialog_threading_fn);
+                }
             }
-        }
 
-        if (ImGui::Button("Replace Asset"))
-        {
-            if (m_replace_mesh_callback)
+            if (ImGui::Button("Replace Asset"))
             {
-                m_show_mesh_replacement_error_message
-                    = !m_replace_mesh_callback(m_selected_mesh_for_window, m_asset_path.data());
+                if (m_replace_mesh_callback)
+                {
+                    m_show_mesh_replacement_error_message
+                        = !m_replace_mesh_callback(m_mesh_ID_to_replace, m_asset_path.data());
+                }
+            }
+
+            static constexpr CHAR k_MESH_REPLACEMENT_FAILED_TEXT[]
+                = "Entered path is not a valid GLTF or GLB file.\0";
+            static constexpr ImVec4 k_MESH_REPLACEMENT_FAILED_TEXT_COLOR(1.0f, 0.0f, 0.0f, 1.0f);
+            if (m_show_mesh_replacement_error_message)
+            {
+                ImGui::PushStyleColor(ImGuiCol_Text, k_MESH_REPLACEMENT_FAILED_TEXT_COLOR);
+                ImGui::TextUnformatted(k_MESH_REPLACEMENT_FAILED_TEXT);
+                ImGui::PopStyleColor();
             }
         }
-
-        static constexpr CHAR k_MESH_REPLACEMENT_FAILED_TEXT[]
-            = "Entered path is not a valid GLTF or GLB file.\0";
-
-        if (m_show_mesh_replacement_error_message)
-        {
-            ImGui::TextUnformatted(k_MESH_REPLACEMENT_FAILED_TEXT);
-        }
     }
-
-    ImGui::End();
-
-    if (!is_open)
-    {
-        m_selected_mesh_for_window = ~0ull;
-    }
+    ImGui::EndChild();
 }
 
 void DebugWindow::render_performance_stats()
@@ -385,7 +380,8 @@ void DebugWindow::render_debug_log()
     ImGui::Checkbox("Auto-scroll", &auto_scroll);
     ImGui::Separator();
 
-    ImGui::BeginChild("##DebugLogChild", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
+    ImGui::BeginChild("##DebugLogChild", ImVec2(0, ImGui::GetTextLineHeight() * 20.0f),
+                      ImGuiChildFlags_FrameStyle, ImGuiWindowFlags_HorizontalScrollbar);
 
     const auto cur = dbglog_current_seq();
     const auto& log = get_debug_log();
