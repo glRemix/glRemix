@@ -96,40 +96,38 @@ bool glRemix::load_mesh_from_path(std::filesystem::path asset_path,
             || index_acc.componentType == fastgltf::ComponentType::UnsignedShort)
         {
             // handle u16 values
-            size_t i = 0;
-            fastgltf::iterateAccessor<uint16_t>(asset.get(), index_acc,
-                                                [&](uint16_t idx)
-                                                {
-                                                    if (idx >= primitive_vertex_count)
-                                                    {
-                                                        // index out of bounds
-                                                        valid = false;
-                                                        return;
-                                                    }
-                                                    out_indices[index_offset + i]
-                                                        = static_cast<uint32_t>(idx)
-                                                          + static_cast<uint32_t>(vertex_offset);
-                                                    ++i;
-                                                });
+            fastgltf::iterateAccessorWithIndex<uint16_t>(asset.get(), index_acc,
+                                                         [&](uint16_t idx, size_t i)
+                                                         {
+                                                             if (idx >= primitive_vertex_count)
+                                                             {
+                                                                 // index out of bounds
+                                                                 valid = false;
+                                                                 return;
+                                                             }
+                                                             out_indices[index_offset + i]
+                                                                 = static_cast<uint32_t>(idx)
+                                                                   + static_cast<uint32_t>(
+                                                                       vertex_offset);
+                                                         });
         }
         else
         {
             // handle u32 values
-            size_t i = 0;
-            fastgltf::iterateAccessor<uint32_t>(asset.get(), index_acc,
-                                                [&](uint32_t idx)
-                                                {
-                                                    if (idx >= primitive_vertex_count)
-                                                    {
-                                                        // index out of bounds
-                                                        valid = false;
-                                                        return;
-                                                    }
-                                                    out_indices[index_offset + i]
-                                                        = idx
-                                                          + static_cast<uint32_t>(vertex_offset);
-                                                    ++i;
-                                                });
+            fastgltf::iterateAccessorWithIndex<uint32_t>(asset.get(), index_acc,
+                                                         [&](uint32_t idx, size_t i)
+                                                         {
+                                                             if (idx >= primitive_vertex_count)
+                                                             {
+                                                                 // index out of bounds
+                                                                 valid = false;
+                                                                 return;
+                                                             }
+                                                             out_indices[index_offset + i]
+                                                                 = idx
+                                                                   + static_cast<uint32_t>(
+                                                                       vertex_offset);
+                                                         });
         }
 
         if (!valid)
