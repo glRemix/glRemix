@@ -82,6 +82,18 @@ BOOL WINAPI wgl_swap_buffers_ovr(HDC dc)
     }
 
     g_ipc.end_frame();
+
+    if (g_ipc.has_reader_shutdown())
+    {
+        if (gl::shutdown())
+        {
+            extern IMAGE_DOS_HEADER __ImageBase;
+            HMODULE hModule = reinterpret_cast<HMODULE>(&__ImageBase);
+
+            FreeLibraryAndExitThread(hModule, 0);  // exit self cleanly
+        }
+    }
+
     g_ipc.start_frame_or_wait();
 
     return TRUE;

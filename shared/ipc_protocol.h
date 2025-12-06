@@ -19,6 +19,9 @@ constexpr const wchar_t* k_MAP_B = L"Local\\glRemix_Map_B";
 constexpr const wchar_t* k_WRITE_EVENT_B = L"Local\\glRemix_WriteEvent_B";
 constexpr const wchar_t* k_READ_EVENT_B = L"Local\\glRemix_ReadEvent_B";
 
+constexpr const wchar_t* k_WRITER_GLOBAL_SHUTDOWN = L"Local\\glRemix_Writer_Global_ShutdownEvent";
+constexpr const wchar_t* k_READER_GLOBAL_SHUTDOWN = L"Local\\glRemix_Reader_Global_ShutdownEvent";
+
 constexpr UINT32 k_MAX_IPC_PAYLOAD = k_DEFAULT_CAPACITY - sizeof(GLFrameHeader);
 
 constexpr DWORD k_READER_INIT_TIMEOUT_MS = 60000;  // 1 minute timeout for graphics debugger workflow
@@ -47,6 +50,12 @@ public:
 
     void write_simple(const void* ptr, SIZE_T bytes);
 
+    bool has_writer_shutdown() const;  // reader can call to check if writer has shutdown
+    bool has_reader_shutdown() const;  // writer can call to check if writer has shutdown
+
+    void shutdown_writer();            // writer calls to signal own shutdown. non-blocking.
+    void shutdown_reader();            // reader calls to signal own shutdown. non-blocking.
+
 #include "ipc_protocol.inl"
 
 private:
@@ -70,5 +79,8 @@ private:
     MemorySlot* m_curr_slot = nullptr;
 
     UINT32 m_offset = 0;
+
+    HANDLE m_writer_shutdown_event_handle = nullptr;  // created by writer, opened by reader
+    HANDLE m_reader_shutdown_event_handle = nullptr;  // created by reader, opened by writer
 };
 }  // namespace glRemix

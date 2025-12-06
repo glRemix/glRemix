@@ -17,6 +17,9 @@ void glRemix::IPCProtocol::init_writer()
     {
         throw std::runtime_error("IPCProtocol.WRITER - Failed to create SharedMemory B");
     }
+
+    m_writer_shutdown_event_handle = CreateEventW(nullptr, false, false, k_WRITER_GLOBAL_SHUTDOWN);
+    m_reader_shutdown_event_handle = OpenEventW(EVENT_ALL_ACCESS, FALSE, k_READER_GLOBAL_SHUTDOWN);
 }
 
 void glRemix::IPCProtocol::start_frame_or_wait()
@@ -47,11 +50,9 @@ void glRemix::IPCProtocol::start_frame_or_wait()
                           "write before latest.");  // theoretically should not occur
                 break;
             case WAIT_OBJECT_0 + 1: m_curr_slot = latest; break;
-            case WAIT_TIMEOUT:
-                throw std::system_error(
-                    ERROR_TIMEOUT, std::system_category(),
-                    "IPCProtocol.WRITER - Timed out while waiting for IPC memory to become "
-                    "available to write. Check the READER process for stalls.");
+            case WAIT_OBJECT_0 + 2:
+                throw std::system_error(ERROR_SHUTDOWN_IN_PROGRESS, std::system_category(),
+                                        "IPCProtocol.WRITER - Reader is shutting down.");
             default:
                 // this is a runtime_error as it is unpredictable to my knowledge
                 throw std::runtime_error(FSTR(
@@ -95,6 +96,12 @@ void glRemix::IPCProtocol::init_reader()
         if (result_A && result_B)
         {
             m_curr_slot = &m_slot_A;
+
+            m_reader_shutdown_event_handle = CreateEventW(nullptr, false, false,
+                                                          k_READER_GLOBAL_SHUTDOWN);
+            m_writer_shutdown_event_handle = OpenEventW(EVENT_ALL_ACCESS, FALSE,
+                                                        k_WRITER_GLOBAL_SHUTDOWN);
+
             return;  // success
         }
         else
@@ -117,7 +124,6 @@ void glRemix::IPCProtocol::init_reader()
 
         elapsed += RETRY_MS;
     }
-    // this is a runtime_error as it should not happen if shim and renderer are correctly launched
     throw std::runtime_error("IPCProtocol.READER - Timed out waiting for writer initialization.");
 }
 
@@ -150,11 +156,9 @@ void glRemix::IPCProtocol::consume_frame_or_wait(void* payload, UINT32* frame_in
                 DBG_PRINT("IPCProtocol.READER - Latest SharedMemory slot became available to read "
                           "before oldest.");
                 break;  // theoretically should not occur
-            case WAIT_TIMEOUT:
-                throw std::system_error(
-                    ERROR_TIMEOUT, std::system_category(),
-                    "IPCProtocol.READER - Timed out while waiting for IPC memory to become "
-                    "available to read. Check the WRITER process for stalls.");
+            case WAIT_OBJECT_0 + 2:
+                throw std::system_error(ERROR_SHUTDOWN_IN_PROGRESS, std::system_category(),
+                                        "IPCProtocol.READER - Writer is shutting down.");
             default:
                 // this is a runtime_error as it is unpredictable to my knowledge
                 throw std::runtime_error(FSTR(
@@ -187,4 +191,40 @@ void glRemix::IPCProtocol::write_simple(const void* ptr, SIZE_T bytes)
 {
     m_curr_slot->smem.write(ptr, m_offset, bytes);
     m_offset += bytes;
+}
+
+bool glRemix::IPCProtocol::has_writer_shutdown() const
+{
+    if (!m_writer_shutdown_event_handle)
+    {
+        return false;
+    }
+
+    return WaitForSingleObject(m_writer_shutdown_event_handle, 0) == WAIT_OBJECT_0;
+}
+
+bool glRemix::IPCProtocol::has_reader_shutdown() const
+{
+    if (!m_reader_shutdown_event_handle)
+    {
+        return false;
+    }
+
+    return WaitForSingleObject(m_reader_shutdown_event_handle, 0) == WAIT_OBJECT_0;
+}
+
+void glRemix::IPCProtocol::shutdown_writer()
+{
+    if (m_writer_shutdown_event_handle)
+    {
+        SetEvent(m_writer_shutdown_event_handle);
+    }
+}
+
+void glRemix::IPCProtocol::shutdown_reader()
+{
+    if (m_reader_shutdown_event_handle)
+    {
+        SetEvent(m_reader_shutdown_event_handle);
+    }
 }
