@@ -535,18 +535,24 @@ void glRemix::glRemixRenderer::create_pending_buffers(ID3D12GraphicsCommandList7
 
         // Cache the geometry
         const UINT32 resource_idx = static_cast<UINT32>(idx);
-        MeshRecord cached_mesh{};
-        cached_mesh.mesh_id = pending.hash;
-        cached_mesh.blas_vb_ib_idx = resource_idx;
-        cached_mesh.last_frame = state.m_current_frame;
-        state.m_mesh_map[pending.hash] = cached_mesh;  // actually modifies driver state
-
-        // push to m_meshes
         MeshRecord* mesh;
-        mesh = &state.m_mesh_map[pending.hash];
 
-        // assign per-instance data for new mesh
-        mesh->last_frame = state.m_current_frame;
+        // check if mesh already exists in m_mesh_map
+        if (state.m_mesh_map.contains(pending.hash))
+        {
+            mesh = &state.m_mesh_map[pending.hash];
+            mesh->blas_vb_ib_idx = resource_idx;
+            mesh->last_frame = state.m_current_frame;
+        }
+        else
+        {
+            MeshRecord cached_mesh{};
+            cached_mesh.mesh_id = pending.hash;
+            cached_mesh.blas_vb_ib_idx = resource_idx;
+            cached_mesh.last_frame = state.m_current_frame;
+            state.m_mesh_map[pending.hash] = cached_mesh;  // actually modifies driver state
+            mesh = &state.m_mesh_map[pending.hash];
+        }
 
         // update m_mesh_replacement_tracker
         if (pending.replace_idx != -1)
@@ -1412,7 +1418,6 @@ void glRemix::glRemixRenderer::render()
         build_tlas(cmd_list.Get());
 
         XMMATRIX proj;
-
         if (m_debug_window.m_parameters.perspective_locked)
         {
             float fov = XM_PIDIV2;  // 90 degrees
