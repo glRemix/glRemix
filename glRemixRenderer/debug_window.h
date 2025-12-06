@@ -12,6 +12,9 @@ namespace glRemix
 constexpr WCHAR k_LOCAL_WINDOW_CLASS_DEFAULT_NAME[] = L"glRemix Window Class";
 constexpr WCHAR k_LOCAL_WINDOW_DEFAULT_TEXT[] = L"glRemix Window";
 
+constexpr CHAR k_IMGUI_MAIN_WINDOW_NAME[] = "glRemix";  // both title and id will be set to this
+constexpr CHAR k_IMGUI_ASSET_OPTIONS_WINDOW_NAME[] = "Asset Options Window";
+
 class DebugWindow
 {
 public:
@@ -40,8 +43,10 @@ private:
 
     UINT64 m_mesh_ID_to_replace = UINT_MAX;
     std::array<CHAR, 256> m_asset_path{};
-    std::function<void(UINT64 mesh_id, const CHAR* asset_path)>
+    std::function<bool(UINT64 mesh_id, const CHAR* asset_path)>
         m_replace_mesh_callback;  // replace_mesh function from rt_app
+
+    bool m_show_mesh_replacement_error_message = false;
 
     UINT64 m_selected_mesh_for_window = ~0ull;
 
@@ -73,7 +78,7 @@ public:
     void render(DebugInfo debug_info);
 
     void set_replace_mesh_callback(
-        std::function<void(UINT64 mesh_id, const CHAR* asset_path)> callback);
+        std::function<bool(UINT64 mesh_id, const CHAR* asset_path)> callback);
     void set_mesh_stats(const MeshStats& mesh_stats);
 
     void destroy();

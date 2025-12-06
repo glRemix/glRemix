@@ -118,7 +118,7 @@ protected:
 
 private:
     // asset replacement
-    void replace_mesh(UINT64 meshID, const char* new_asset_path);
+    bool replace_mesh(UINT64 meshID, const char* new_asset_path);
     void transform_replacement_vertices(std::vector<Vertex>& gltf_vertices,
                                         std::array<float, 3> scale_val);
     void handle_per_frame_replacement();

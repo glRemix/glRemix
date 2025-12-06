@@ -474,7 +474,7 @@ void glRemix::glRemixRenderer::create()
 
     // set asset replacement callback
     m_debug_window.set_replace_mesh_callback([this](UINT64 meshID, const char* path)
-                                             { this->replace_mesh(meshID, path); });
+                                             { return this->replace_mesh(meshID, path); });
 }
 
 void glRemix::glRemixRenderer::create_pending_buffers(ID3D12GraphicsCommandList7* cmd_list)
@@ -867,7 +867,7 @@ UINT glRemix::glRemixRenderer::collect_expired_meshes()
 }
 
 // replaces asset in scene based on file provided by user in ImGui
-void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset_path)
+bool glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset_path)
 {
     glState& state = m_driver.get_state();
 
@@ -927,8 +927,11 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
     std::vector<Material> new_materials;
     PendingTexture new_texture{};
 
-    THROW_IF_FALSE(load_mesh_from_path(new_asset_path_fs, new_vertices, new_indices, new_texture,
-                                       min_bb, max_bb));
+    if (!load_mesh_from_path(new_asset_path_fs, new_vertices, new_indices, new_texture, min_bb,
+                             max_bb))
+    {
+        return false;
+    }
 
     // set actual index of texture and push to pending textures
     assert(!u64_overflows_u32(state.m_pending_textures.size()));

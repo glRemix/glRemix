@@ -5,6 +5,7 @@
 #include <imgui_internal.h>
 #include <cstdio>
 #include <commdlg.h>
+#include <sstream>
 
 #include <shared/debug_utils.h>
 #include <shared/math_utils.h>
@@ -23,7 +24,7 @@ LRESULT CALLBACK s_local_window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
         default: break;  // TODO: case on msg for custom input handling
     }
 
-    if (ImGui::GetCurrentContext() != NULL)
+    if (ImGui::GetCurrentContext() != nullptr)
     {
         // forward to ImGui
         static ImGuiIO& io = ImGui::GetIO();
@@ -67,7 +68,6 @@ void DebugWindow::init_imgui_frontends()
                             nullptr, nullptr, hInstance, nullptr);
 
     THROW_IF_FALSE(m_hwnd);
-    SetFocus(m_hwnd);
 
     THROW_IF_FALSE(ImGui_ImplWin32_Init(m_hwnd));
 
@@ -96,7 +96,7 @@ void glRemix::DebugWindow::destroy()
 void DebugWindow::render(const DebugInfo debug_info)
 {
     ImGui::SetNextWindowPos(ImVec2(mk_initialPosY, mk_initialPosY), ImGuiCond_Once);
-    if (ImGui::Begin("glRemix", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    if (ImGui::Begin(k_IMGUI_MAIN_WINDOW_NAME, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
     {
         if (ImGui::BeginTabBar("DebugTabs"))
         {
@@ -130,7 +130,7 @@ void DebugWindow::render(const DebugInfo debug_info)
 
 // get replace_mesh function from rt_app
 void DebugWindow::set_replace_mesh_callback(
-    std::function<void(UINT64 mesh_id, const CHAR* asset_path)> callback)
+    std::function<bool(UINT64 mesh_id, const CHAR* asset_path)> callback)
 {
     m_replace_mesh_callback = callback;
 }
@@ -155,15 +155,21 @@ void DebugWindow::render_mesh_ids(const MeshRecord* records, const size_t count)
             char buf[64];
             snprintf(buf, 64, "Asset ID: %llu", mesh_id);
 
-            if (ImGui::Selectable(buf, is_selected))
-            {
-                m_mesh_ID_to_replace = mesh_id;
-            }
-
             // for mesh options window
             if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
             {
                 m_selected_mesh_for_window = mesh_id;
+                m_show_mesh_replacement_error_message = false;
+            }
+            else if (ImGui::Selectable(buf, is_selected))
+            {
+                m_mesh_ID_to_replace = mesh_id;
+                m_show_mesh_replacement_error_message = false;
+
+                if (m_selected_mesh_for_window != ~0ull)
+                {
+                    m_selected_mesh_for_window = mesh_id;
+                }
             }
         }
         ImGui::EndListBox();
@@ -204,11 +210,8 @@ void DebugWindow::render_mesh_options_window(tsl::robin_map<UINT64, MeshRecord>*
         return;
     }
 
-    static CHAR title[64];
-    snprintf(title, sizeof(title), "Asset Options: %llu", m_selected_mesh_for_window);
-
     // find position of main window
-    ImGuiWindow* main_imgui = ImGui::FindWindowByName("glRemix");
+    ImGuiWindow* main_imgui = ImGui::FindWindowByName(k_IMGUI_MAIN_WINDOW_NAME);
     if (main_imgui)
     {
         ImVec2 pos = main_imgui->Pos;
@@ -218,8 +221,12 @@ void DebugWindow::render_mesh_options_window(tsl::robin_map<UINT64, MeshRecord>*
         ImGui::SetNextWindowPos(new_pos, ImGuiCond_Always);
     }
 
-    static bool is_open = true;
-    if (ImGui::Begin(title, &is_open, ImGuiWindowFlags_AlwaysAutoResize))
+    static CHAR identifier[96];
+    snprintf(identifier, sizeof(identifier), "Asset Options: %llu###%s", m_selected_mesh_for_window,
+             k_IMGUI_ASSET_OPTIONS_WINDOW_NAME);
+
+    bool is_open = true;
+    if (ImGui::Begin(identifier, &is_open, ImGuiWindowFlags_AlwaysAutoResize))
     {
         auto& mesh = m_mesh_map->at(m_selected_mesh_for_window);
 
@@ -228,7 +235,7 @@ void DebugWindow::render_mesh_options_window(tsl::robin_map<UINT64, MeshRecord>*
 
         ImGui::Separator();
 
-        ImGui::Text("Asset Replacement - Path to New GLTF File:");
+        ImGui::TextUnformatted("Asset Replacement - Path to New GLTF File:");
         ImGui::InputText("##ReplacementPath", m_asset_path.data(), sizeof(m_asset_path));
 
         ImGui::SameLine();
@@ -255,12 +262,6 @@ void DebugWindow::render_mesh_options_window(tsl::robin_map<UINT64, MeshRecord>*
 
                     CoUninitialize();
                 };
-
-                if (m_dialog_thread.joinable())
-                {
-                    m_dialog_thread.join();
-                }
-
                 m_dialog_thread = std::thread(handle_file_dialog_threading_fn);
             }
         }
@@ -269,8 +270,17 @@ void DebugWindow::render_mesh_options_window(tsl::robin_map<UINT64, MeshRecord>*
         {
             if (m_replace_mesh_callback)
             {
-                m_replace_mesh_callback(m_selected_mesh_for_window, m_asset_path.data());
+                m_show_mesh_replacement_error_message
+                    = !m_replace_mesh_callback(m_selected_mesh_for_window, m_asset_path.data());
             }
+        }
+
+        static constexpr CHAR k_MESH_REPLACEMENT_FAILED_TEXT[]
+            = "Entered path is not a valid GLTF or GLB file.\0";
+
+        if (m_show_mesh_replacement_error_message)
+        {
+            ImGui::TextUnformatted(k_MESH_REPLACEMENT_FAILED_TEXT);
         }
     }
 
