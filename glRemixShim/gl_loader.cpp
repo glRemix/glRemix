@@ -200,6 +200,8 @@ bool shutdown()
         g_hooks.clear();
     }
 
+    g_ipc.shutdown_writer();
+
 #if 1
     // TODO: add some other custom goodbye? or remove
     MessageBoxTimeoutW(nullptr, L"Thanks for using glRemix!", L"glRemixShim",

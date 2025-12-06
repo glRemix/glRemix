@@ -40,7 +40,7 @@ void glRemix::IPCProtocol::start_frame_or_wait()
 
         HANDLE tmp_events[2] = { oldest->smem.get_read_event(), latest->smem.get_read_event() };
 
-        DWORD dw_wait_result = WaitForMultipleObjects(2, tmp_events, false, k_GLOBAL_TIMEOUT_MS);
+        DWORD dw_wait_result = WaitForMultipleObjects(2, tmp_events, false, INFINITE);
 
         switch (dw_wait_result)
         {
@@ -146,7 +146,7 @@ void glRemix::IPCProtocol::consume_frame_or_wait(void* payload, UINT32* frame_in
 
         HANDLE tmp_events[2] = { oldest->smem.get_write_event(), latest->smem.get_write_event() };
 
-        DWORD dw_wait_result = WaitForMultipleObjects(2, tmp_events, false, k_GLOBAL_TIMEOUT_MS);
+        DWORD dw_wait_result = WaitForMultipleObjects(2, tmp_events, false, INFINITE);
 
         switch (dw_wait_result)
         {

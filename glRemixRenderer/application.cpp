@@ -26,8 +26,7 @@ void Application::run_with_hwnd(const bool enable_debug_layer)
 
     create();
 
-    bool quit = false;
-    while (!quit)
+    while (!m_quit)
     {
         // Process window messages for ImGui input
         MSG msg;
@@ -38,7 +37,7 @@ void Application::run_with_hwnd(const bool enable_debug_layer)
 
             if (msg.message == WM_QUIT)
             {
-                quit = true;
+                m_quit = true;
             }
         }
 
@@ -48,11 +47,11 @@ void Application::run_with_hwnd(const bool enable_debug_layer)
         }
         catch (const std::system_error& e)
         {
-            if (e.code().value() == ERROR_TIMEOUT)
+            if (e.code().value() == ERROR_SHUTDOWN_IN_PROGRESS)
             {
-                DBG_PRINT("GLRemixApp - Renderer exited gracefully from IPC timeout.");
+                DBG_PRINT("GLRemixApp - Renderer exited gracefully from shim shutdown.");
 
-                quit = true;
+                m_quit = true;
                 continue;
             }
             throw;  // continue error propogation

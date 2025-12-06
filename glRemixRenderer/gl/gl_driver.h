@@ -67,8 +67,14 @@ public:
 
     inline void destroy()
     {
+        m_ipc.shutdown_reader();
         m_state.reset();
     };
+
+    inline bool shim_is_running()
+    {
+        return !m_ipc.has_writer_shutdown();
+    }
 
     glDriver() = default;
     ~glDriver() = default;

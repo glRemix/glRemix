@@ -1151,6 +1151,12 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
 
 void glRemix::glRemixRenderer::render()
 {
+    if (!m_driver.shim_is_running())
+    {
+        this->m_quit = true;
+        return;
+    }
+
     // Read GL stream and set resources accordingly
     auto& state = m_driver.get_state();
 
@@ -1645,9 +1651,10 @@ void glRemix::glRemixRenderer::render()
 
 void glRemix::glRemixRenderer::destroy()
 {
-    m_driver.destroy();
     m_context.destroy_imgui();
+    m_driver.destroy();
     m_debug_window.destroy();
+    Application::destroy();  // call parent destructor
 }
 
 void glRemix::glRemixRenderer::create_swapchain_and_rts(HWND hwnd)

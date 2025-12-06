@@ -2,6 +2,9 @@
 
 #include "gl_loader.h"
 
+extern "C" IMAGE_DOS_HEADER __ImageBase;
+HMODULE g_hModule = reinterpret_cast<HMODULE>(&__ImageBase);
+
 namespace glRemix::hooks
 {
 // Window procedure to capture input events and forward to IPC
@@ -87,10 +90,7 @@ BOOL WINAPI wgl_swap_buffers_ovr(HDC dc)
     {
         if (gl::shutdown())
         {
-            extern IMAGE_DOS_HEADER __ImageBase;
-            HMODULE hModule = reinterpret_cast<HMODULE>(&__ImageBase);
-
-            FreeLibraryAndExitThread(hModule, 0);  // exit self cleanly
+            FreeLibraryAndExitThread(g_hModule, 0);  // exit self cleanly
         }
     }
 
