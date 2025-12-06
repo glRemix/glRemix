@@ -988,11 +988,19 @@ bool glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
 void glRemix::glRemixRenderer::transform_replacement_vertices(std::vector<Vertex>& gltf_vertices,
                                                               std::array<float, 3> scale_val)
 {
+    XMMATRIX scale_mat = XMMatrixScaling(scale_val[0], scale_val[1], scale_val[2]);
+    XMMATRIX normal_mat = XMMatrixTranspose(XMMatrixInverse(nullptr, scale_mat));
+
     for (auto& v : gltf_vertices)
     {
-        v.position.x *= scale_val[0];
-        v.position.y *= scale_val[1];
-        v.position.z *= scale_val[2];
+        XMVECTOR pos = XMLoadFloat3(&v.position);
+        pos = XMVector3Transform(pos, scale_mat);
+        XMStoreFloat3(&v.position, pos);
+
+        XMVECTOR norm = XMLoadFloat3(&v.normal);
+        norm = XMVector3TransformNormal(norm, normal_mat);
+        norm = XMVector3Normalize(norm);
+        XMStoreFloat3(&v.normal, norm);
     }
 }
 
