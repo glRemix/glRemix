@@ -468,7 +468,7 @@ void glRemix::glRemixRenderer::create()
     }
 
     // set asset replacement callback
-    m_debug_window.set_replace_mesh_callback([this](UINT32 meshID, const char* path)
+    m_debug_window.set_replace_mesh_callback([this](UINT64 meshID, const char* path)
                                              { this->replace_mesh(meshID, path); });
 }
 
@@ -530,23 +530,30 @@ void glRemix::glRemixRenderer::create_pending_buffers(ID3D12GraphicsCommandList7
 
         // Cache the geometry
         const UINT32 resource_idx = static_cast<UINT32>(idx);
-        MeshRecord cached_mesh{};
-        cached_mesh.mesh_id = pending.hash;
-        cached_mesh.blas_vb_ib_idx = resource_idx;
-        state.m_mesh_map[pending.hash] = cached_mesh;  // actually modifies driver state
-
-        // push to m_meshes
         MeshRecord* mesh;
-        mesh = &state.m_mesh_map[pending.hash];
 
-        // assign per-instance data for new mesh
-        mesh->last_frame = m_current_frame;
+        // check if mesh already exists in m_mesh_map
+        if (state.m_mesh_map.contains(pending.hash))
+        {
+            mesh = &state.m_mesh_map[pending.hash];
+            mesh->blas_vb_ib_idx = resource_idx;
+            mesh->last_frame = state.m_current_frame;
+        }
+        else
+        {
+            MeshRecord cached_mesh{};
+            cached_mesh.mesh_id = pending.hash;
+            cached_mesh.blas_vb_ib_idx = resource_idx;
+            cached_mesh.last_frame = state.m_current_frame;
+            state.m_mesh_map[pending.hash] = cached_mesh;  // actually modifies driver state
+            mesh = &state.m_mesh_map[pending.hash];
+        }
 
         // update m_mesh_replacement_tracker
         if (pending.replace_idx != -1)
         {
             // add mesh to m_mesh_replacement_tracker
-            state.m_mesh_replacement_tracker.emplace(pending.replace_idx, *mesh);
+            m_mesh_replacement_tracker.emplace(pending.replace_idx, *mesh);
         }
         else
         {
@@ -805,15 +812,19 @@ void glRemix::glRemixRenderer::handle_per_frame_replacement()
 {
     glState& state = sm_driver.get_state();
 
-    if (state.m_mesh_replacement_tracker.empty())
+    if (m_mesh_replacement_tracker.empty())
     {
         return;
     }
 
-    for (auto& kv : state.m_mesh_replacement_tracker)
+    for (auto it = m_mesh_replacement_tracker.begin(); it != m_mesh_replacement_tracker.end();)
     {
-        UINT32 index = kv.first;                    // index for m_meshes
-        const MeshRecord& replacement = kv.second;  // mesh to replace with
+        UINT32 index = it->first;  // index for m_meshes
+        MeshRecord* replacement = &m_mesh_replacement_tracker[index];
+
+        // update frame last used
+        MeshRecord* replacement_from_map = &state.m_mesh_map[replacement->mesh_id];
+        replacement_from_map->last_frame = state.m_current_frame;
 
         // check if the index is valid
         if (index >= state.m_meshes.size())
@@ -821,7 +832,8 @@ void glRemix::glRemixRenderer::handle_per_frame_replacement()
             continue;
         }
 
-        state.m_meshes[index] = replacement;
+        state.m_meshes[index] = *replacement;
+        ++it;
     }
 }
 
@@ -888,7 +900,7 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
                                                &resource.vertex_buffer.descriptor);
             m_descriptor_pager.free_descriptor(dx::DescriptorPager::VB_IB,
                                                &resource.index_buffer.descriptor);
-            it = state.m_mesh_map.erase(it);
+            state.m_mesh_map.erase(it);
 
             // erase mesh from m_meshes and get its index for m_mesh_replacement_tracker
             auto it2 = std::find_if(state.m_meshes.begin(), state.m_meshes.end(),
@@ -914,8 +926,16 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
     std::vector<Vertex> new_vertices;
     std::vector<UINT32> new_indices;
     std::vector<Material> new_materials;
-    THROW_IF_FALSE(glRemix::load_mesh_from_path(new_asset_path_fs, new_vertices, new_indices,
-                                                new_materials, min_bb, max_bb));
+    PendingTexture new_texture{};
+
+    THROW_IF_FALSE(load_mesh_from_path(new_asset_path_fs, new_vertices, new_indices, new_texture,
+                                       min_bb, max_bb));
+
+    // set actual index of texture and push to pending textures
+    assert(!u64_overflows_u32(state.m_pending_textures.size()));
+    UINT32 new_texture_idx = static_cast<UINT32>(state.m_pending_textures.size());
+    new_texture.index = new_texture_idx;
+    state.m_pending_textures.emplace(new_texture_idx, std::move(new_texture));
 
     // get value to scale imported mesh vertices
     std::array old_bb_size = { old_max_bb[0] - old_min_bb[0], old_max_bb[1] - old_min_bb[1],
@@ -950,10 +970,13 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
                               + state.m_pending_geometries.size();
 
     // added other mesh properties
+    new_mesh.mesh_id = new_mesh_hash;
     new_mesh.mat_idx = old_mesh_mat_idx;
     new_mesh.mv_idx = old_mesh_mv_idx;
+    new_mesh.tex_idx = new_texture.index;
     new_mesh.min_bb = min_bb;
     new_mesh.max_bb = max_bb;
+    new_mesh.last_frame = state.m_current_frame;
 
     state.m_mesh_map.emplace(new_mesh_hash, new_mesh);
 
@@ -963,11 +986,19 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
 void glRemix::glRemixRenderer::transform_replacement_vertices(std::vector<Vertex>& gltf_vertices,
                                                               std::array<float, 3> scale_val)
 {
+    XMMATRIX scale_mat = XMMatrixScaling(scale_val[0], scale_val[1], scale_val[2]);
+    XMMATRIX normal_mat = XMMatrixTranspose(XMMatrixInverse(nullptr, scale_mat));
+
     for (auto& v : gltf_vertices)
     {
-        v.position.x *= scale_val[0];
-        v.position.y *= scale_val[1];
-        v.position.z *= scale_val[2];
+        XMVECTOR pos = XMLoadFloat3(&v.position);
+        pos = XMVector3Transform(pos, scale_mat);
+        XMStoreFloat3(&v.position, pos);
+
+        XMVECTOR norm = XMLoadFloat3(&v.normal);
+        norm = XMVector3TransformNormal(norm, normal_mat);
+        norm = XMVector3Normalize(norm);
+        XMStoreFloat3(&v.normal, norm);
     }
 }
 
@@ -1216,6 +1247,25 @@ void glRemix::glRemixRenderer::render()
     cmd_list->RSSetViewports(1, &viewport);
     cmd_list->RSSetScissorRects(1, &scissor_rect);
 
+    m_context.start_imgui_frame();
+    {
+        DebugWindow::MeshStats mesh_stats{
+            .num_meshes_rendered = state.m_meshes.size(),
+            .num_meshes = m_mesh_resources.size() - m_mesh_resources.freed_size(),
+            .num_textures = m_texture_map.size(),
+        };
+        m_debug_window.set_mesh_stats(mesh_stats);
+    }
+    {
+        DebugWindow::DebugInfo debug_info{
+            // This only displays the current frames meshes
+            .mesh_records = { .records = state.m_meshes.data(), .count = state.m_meshes.size() },
+            .m_mesh_map = &state.m_mesh_map,
+        };
+
+        m_debug_window.render(debug_info);
+    }
+
     // Build all pending buffers from geometry collected in read_gl_command_stream
     create_pending_buffers(cmd_list.Get());
     {
@@ -1339,28 +1389,10 @@ void glRemix::glRemixRenderer::render()
     m_descriptor_pager.copy_pages_to_gpu(m_context, &m_GPU_descriptor_heap,
                                          reserved_descriptor_offset);
 
-    m_context.start_imgui_frame();
-    {
-        DebugWindow::MeshStats mesh_stats{
-            .num_meshes_rendered = gpu_mesh_records_to_copy.size(),
-            .num_meshes = m_mesh_resources.size() - m_mesh_resources.freed_size(),
-            .num_textures = m_texture_map.size(),
-        };
-        m_debug_window.set_mesh_stats(mesh_stats);
-
 #ifdef GLREMIX_DYNAMIC_MESH_CAP
-        state.m_last_rendered_mesh_count = std::max(gpu_mesh_records_to_copy.size(),
-                                                    state.m_last_rendered_mesh_count);
+    state.m_last_rendered_mesh_count = std::max(gpu_mesh_records_to_copy.size(),
+                                                state.m_last_rendered_mesh_count);
 #endif
-    }
-    {
-        DebugWindow::DebugInfo debug_info{
-            // This only displays the current frames meshes
-            .mesh_records = { .records = state.m_meshes.data(), .count = state.m_meshes.size() }
-        };
-
-        m_debug_window.render(debug_info);
-    }
 
     // build environment map
     std::call_once(m_create_env_once, [&] { create_environment_map(cmd_list.Get(), m_env_path); });

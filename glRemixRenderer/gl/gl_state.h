@@ -73,9 +73,6 @@ public:
     UINT32 m_num_textures;
     tsl::robin_map<UINT32, UINT32> m_texture_indices;
     tsl::robin_map<UINT32, PendingTexture> m_pending_textures;
-    tsl::robin_map<UINT32, MeshRecord>
-        m_mesh_replacement_tracker;  // maps index in m_meshes of mesh to be replaced, with
-                                     // replacement mesh
 
     // multitextures
     UINT32 m_active_texture = GL_TEXTURE0_ARB;
