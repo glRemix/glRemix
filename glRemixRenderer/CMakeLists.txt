@@ -177,6 +177,11 @@ if(WIN32)
         target_compile_definitions(${PROJECT_NAME} PRIVATE GLREMIX_DYNAMIC_MESH_CAP)
     endif()
 
+
+    if((NOT GLREMIX_BUILD_SHIM_WIN32 AND NOT GLREMIX_BUILD_SHIM_X64))
+        target_compile_definitions(${PROJECT_NAME} PRIVATE GLREMIX_RENDERER_BUILD_ONLY)
+    endif()
+
     if(MSVC)
         target_compile_options(${PROJECT_NAME} PRIVATE
             /MP # Enable multi-processor compilation

@@ -4,11 +4,21 @@
 #include <array>
 #include <vector>
 
-#include "generated/glext_enums.inl"
-
 #include "gl/gl_matrix_stack.h"
 
 #include "structs.h"
+
+#ifndef GLREMIX_RENDERER_BUILD_ONLY
+#include "generated/glext_enums.inl"
+#endif
+
+#ifndef GL_TEXTURE0_ARB
+#define GL_TEXTURE0_ARB 0x84C0
+#endif
+
+#ifndef GL_TEXTURE1_ARB
+#define GL_TEXTURE1_ARB 0x84C1
+#endif
 
 namespace glRemix
 {
