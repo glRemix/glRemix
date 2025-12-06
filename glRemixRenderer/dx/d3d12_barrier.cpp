@@ -294,7 +294,7 @@ bool mark_use(Resource& resource, const Usage usage)
 }
 
 void emit_barriers(ID3D12GraphicsCommandList7* command_list, Resource* const* resources,
-                   const size_t resource_count, std::vector<BarrierLogEvent>* debug_log)
+                   const size_t resource_count)
 {
     assert(command_list);
     if (resource_count == 0)
@@ -357,21 +357,6 @@ void emit_barriers(ID3D12GraphicsCommandList7* command_list, Resource* const* re
             if (requires_barrier)
             {
                 texture_barriers[texture_barrier_count++] = barrier;
-
-                if (debug_log)
-                {
-                    BarrierLogEvent event{
-                        .resource = resource.resource,
-                        .barrier_type = D3D12_BARRIER_TYPE_TEXTURE,
-                        .access_before = barrier.AccessBefore,
-                        .access_after = barrier.AccessAfter,
-                        .sync_before = barrier.SyncBefore,
-                        .sync_after = barrier.SyncAfter,
-                        .layout_before = barrier.LayoutBefore,
-                        .layout_after = barrier.LayoutAfter,
-                    };
-                    debug_log->push_back(event);
-                }
             }
         }
         else
@@ -398,21 +383,6 @@ void emit_barriers(ID3D12GraphicsCommandList7* command_list, Resource* const* re
             if (requires_barrier)
             {
                 buffer_barriers[buffer_barrier_count++] = barrier;
-
-                if (debug_log)
-                {
-                    BarrierLogEvent event{
-                        .resource = resource.resource,
-                        .barrier_type = D3D12_BARRIER_TYPE_BUFFER,
-                        .access_before = barrier.AccessBefore,
-                        .access_after = barrier.AccessAfter,
-                        .sync_before = barrier.SyncBefore,
-                        .sync_after = barrier.SyncAfter,
-                        .layout_before = D3D12_BARRIER_LAYOUT_UNDEFINED,
-                        .layout_after = D3D12_BARRIER_LAYOUT_UNDEFINED,
-                    };
-                    debug_log->push_back(event);
-                }
             }
         }
 

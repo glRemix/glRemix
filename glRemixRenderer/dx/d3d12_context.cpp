@@ -1598,7 +1598,7 @@ void D3D12Context::emit_barriers(ID3D12GraphicsCommandList7* cmd_list, D3D12Buff
         resources[resource_count++] = &textures[i]->barrier_state;
     }
 
-    dx::emit_barriers(cmd_list, resources, resource_count, nullptr);
+    dx::emit_barriers(cmd_list, resources, resource_count);
 }
 
 void D3D12Context::bind_vertex_buffers(ID3D12GraphicsCommandList7* cmd_list, const UINT start_slot,
