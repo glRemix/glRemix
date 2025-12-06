@@ -8,6 +8,7 @@
 #include <shared/math_utils.h>
 
 #include "application.h"
+#include "arena.h"
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
@@ -1387,25 +1388,29 @@ bool D3D12Context::create_raytracing_pipeline(const RayTracingPipelineDesc& desc
     };
 
     // Collect all subobjects
-    std::vector<D3D12_STATE_SUBOBJECT> subobjects;
-    subobjects.reserve(22);
+    constexpr size_t base_subobjects = 4;      // library, hit group, shader & pipeline config
+    constexpr size_t optional_subobjects = 1;  // global root signature
+    constexpr size_t max_subobjects = base_subobjects + optional_subobjects + (_MAX_EXPORTS * 2);
+    auto subobjects = glRemix::get_arena().alloc_array<D3D12_STATE_SUBOBJECT>(max_subobjects);
+    THROW_IF_FALSE(subobjects);
+    size_t subobject_count = 0;
 
-    subobjects.push_back(lib_sub_obj);
-    subobjects.push_back(hg_subobj);
+    subobjects[subobject_count++] = lib_sub_obj;
+    subobjects[subobject_count++] = hg_subobj;
 
-    subobjects.push_back(shader_config_subobj);
-    subobjects.push_back(pipeline_config_subobj);
+    subobjects[subobject_count++] = shader_config_subobj;
+    subobjects[subobject_count++] = pipeline_config_subobj;
 
     if (desc.global_root_signature)
     {
-        subobjects.push_back(global_rs_subobj);
+        subobjects[subobject_count++] = global_rs_subobj;
     }
 
     for (UINT i = 0; i < _MAX_EXPORTS; i++)
     {
         if (desc.local_root_signatures[i])
         {
-            subobjects.push_back(local_rs_subobjs[i]);
+            subobjects[subobject_count++] = local_rs_subobjs[i];
         }
     }
 
@@ -1414,16 +1419,17 @@ bool D3D12Context::create_raytracing_pipeline(const RayTracingPipelineDesc& desc
     {
         if (desc.local_root_signatures[i] && desc.export_names[i])
         {
-            subobjects.push_back(local_rs_association_subobjs[num_associations++]);
+            subobjects[subobject_count++] = local_rs_association_subobjs[num_associations++];
         }
     }
 
-    assert(!u64_overflows_u32(subobjects.size()));
+    assert(subobject_count <= max_subobjects);
+    assert(!u64_overflows_u32(subobject_count));
 
     D3D12_STATE_OBJECT_DESC state_object_desc{
         .Type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE,
-        .NumSubobjects = static_cast<UINT>(subobjects.size()),
-        .pSubobjects = subobjects.data(),
+        .NumSubobjects = static_cast<UINT>(subobject_count),
+        .pSubobjects = subobjects,
     };
 
     if (FAILED(m_device->CreateStateObject(&state_object_desc, IID_PPV_ARGS(state_object))))
@@ -1572,21 +1578,27 @@ void D3D12Context::emit_barriers(ID3D12GraphicsCommandList7* cmd_list, D3D12Buff
     assert(buffers || textures);
     const size_t total_count = buffer_count + texture_count;
 
-    // TODO: Replace with arena allocator
-    std::vector<Resource*> resources;
+    if (total_count == 0)
+    {
+        return;
+    }
+
+    auto resources = glRemix::get_arena().alloc_array<Resource*>(total_count);
+    THROW_IF_FALSE(resources);
+    size_t resource_count = 0;
 
     for (size_t i = 0; i < buffer_count; i++)
     {
         assert(buffers[i]);
-        resources.push_back(&buffers[i]->barrier_state);
+        resources[resource_count++] = &buffers[i]->barrier_state;
     }
     for (size_t i = 0; i < texture_count; i++)
     {
         assert(textures[i]);
-        resources.push_back(&textures[i]->barrier_state);
+        resources[resource_count++] = &textures[i]->barrier_state;
     }
 
-    dx::emit_barriers(cmd_list, resources.data(), total_count, nullptr);
+    dx::emit_barriers(cmd_list, resources, resource_count, nullptr);
 }
 
 void D3D12Context::bind_vertex_buffers(ID3D12GraphicsCommandList7* cmd_list, const UINT start_slot,

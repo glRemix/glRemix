@@ -4,6 +4,7 @@
 #include <DirectXMath.h>
 #include "dx/d3d12_as.h"
 #include "structs.h"
+#include "arena.h"
 
 #include <filesystem>
 #include <vector>
@@ -50,8 +51,12 @@ bool glRemix::load_mesh_from_path(std::filesystem::path asset_path,
             || index_acc.componentType == fastgltf::ComponentType::UnsignedShort)
         {
             // handle u16 values
-            std::vector<uint16_t> temp(index_acc.count);
-            fastgltf::copyFromAccessor<uint16_t>(asset.get(), index_acc, temp.data());
+            auto temp = get_arena().alloc_array<uint16_t>(index_acc.count);
+            if (!temp)
+            {
+                return false;
+            }
+            fastgltf::copyFromAccessor<uint16_t>(asset.get(), index_acc, temp);
 
             for (size_t i = 0; i < index_acc.count; i++)
             {
