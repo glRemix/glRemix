@@ -4,6 +4,8 @@
 
 #include "hlsl_compat.h"
 
+#define MESHRECORDS_PER_BUFFER 256
+
 struct RayGenConstantBuffer
 {
     XMFLOAT4X4 view_proj;

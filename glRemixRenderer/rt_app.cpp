@@ -240,11 +240,11 @@ void glRemix::glRemixRenderer::create()
             .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
         };
 
-        // Environment map at t2
+        // Environment map at t1
         descriptor_ranges[3] = {
             .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
             .NumDescriptors = 1,
-            .BaseShaderRegister = 2,
+            .BaseShaderRegister = 1,
             .RegisterSpace = 0,
             .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
         };
@@ -253,8 +253,8 @@ void glRemix::glRemixRenderer::create()
         D3D12_DESCRIPTOR_RANGE mesh_record_range{
 
             .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
-            .NumDescriptors = 1,
-            .BaseShaderRegister = 1,  // t1
+            .NumDescriptors = UINT_MAX,  // Unbounded array
+            .BaseShaderRegister = 2,     // t2
             .RegisterSpace = 0,
             .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
         };
@@ -1253,6 +1253,7 @@ void glRemix::glRemixRenderer::render()
             .num_meshes_rendered = state.m_meshes.size(),
             .num_meshes = m_mesh_resources.size() - m_mesh_resources.freed_size(),
             .num_textures = m_texture_map.size(),
+            .num_materials = state.m_materials.size(),
         };
         m_debug_window.set_mesh_stats(mesh_stats);
     }
