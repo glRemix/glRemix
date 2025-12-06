@@ -1438,6 +1438,7 @@ void glRemix::glRemixRenderer::render()
             .dimensions = win_dims,
             .mirror_mode = m_debug_window.m_parameters.mirror_mode,
             .mirror_threshold = m_debug_window.m_parameters.mirror_threshold,
+            .frame_index = get_frame_index(),
         };
         XMStoreFloat4x4(&raygen_cb.view_proj, XMMatrixTranspose(proj));
         XMStoreFloat4x4(&raygen_cb.inv_view_proj, XMMatrixTranspose(inv_proj));
