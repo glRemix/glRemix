@@ -13,6 +13,7 @@ struct RayGenConstantBuffer
     XMUINT2 dimensions;
     BOOL mirror_mode;
     float mirror_threshold;
+    UINT frame_index;
 };
 
 struct Vertex
