@@ -53,7 +53,9 @@ class glRemixRenderer : public Application
     dx::D3D12Buffer m_shader_table{};
     UINT64 m_raygen_shader_table_offset{};
     UINT64 m_miss_shader_table_offset{};
+    UINT64 m_miss_shader_table_stride{};
     UINT64 m_hit_group_shader_table_offset{};
+    UINT64 m_hit_group_shader_table_stride{};
 
     dx::D3D12Texture m_uav_rt{};
     dx::D3D12Descriptor m_uav_rt_descriptor{};

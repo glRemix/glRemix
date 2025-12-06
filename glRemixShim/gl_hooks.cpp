@@ -83,6 +83,24 @@ void APIENTRY gl_tex_coord2f_ovr(GLfloat s, GLfloat t)
     g_ipc.write_command(GLCommandType::GLCMD_TEXCOORD2F, payload);
 }
 
+void APIENTRY gl_vertex2fv_ovr(const GLfloat* v)
+{
+    GLVertex2fvCommand payload{ v[0], v[1] };
+    g_ipc.write_command(GLCommandType::GLCMD_VERTEX2FV, payload);
+}
+
+void APIENTRY gl_color3ub_ovr(GLubyte r, GLubyte g, GLubyte b)
+{
+    GLColor3ubCommand payload{ r / 255.0f, g / 255.0f, b / 255.0f };
+    g_ipc.write_command(GLCommandType::GLCMD_COLOR3UB, payload);
+}
+
+void APIENTRY gl_normal3fv_ovr(const GLfloat* v)
+{
+    GLNormal3fvCommand payload{ v[0], v[1], v[2] };
+    g_ipc.write_command(GLCommandType::GLCMD_NORMAL3FV, payload);
+}
+
 /* DISPLAY LISTS */
 void APIENTRY gl_call_list_ovr(GLuint list)
 {
@@ -158,6 +176,13 @@ void APIENTRY gl_mult_matrixf_ovr(const GLfloat* m)
     g_ipc.write_command(GLCommandType::GLCMD_MULT_MATRIX, payload);
 }
 
+void APIENTRY gl_mult_matrixd_ovr(const GLdouble* m)
+{
+    GLMultMatrixdCommand payload{};
+    memcpy(payload.m, m, sizeof(payload.m));
+    g_ipc.write_command(GLCommandType::GLCMD_MULTMATRIXD, payload);
+}
+
 void APIENTRY gl_push_matrix_ovr()
 {
     GLPushMatrixCommand payload{};
@@ -174,6 +199,12 @@ void APIENTRY gl_translatef_ovr(GLfloat x, GLfloat y, GLfloat z)
 {
     GLTranslateCommand payload{ { x, y, z } };
     g_ipc.write_command(GLCommandType::GLCMD_TRANSLATE, payload);
+}
+
+void APIENTRY gl_translated_ovr(GLdouble x, GLdouble y, GLdouble z)
+{
+    GLTranslatedCommand payload{ { x, y, z } };
+    g_ipc.write_command(GLCommandType::GLCMD_TRANSLATED, payload);
 }
 
 void APIENTRY gl_rotatef_ovr(GLfloat angle, GLfloat x, GLfloat y, GLfloat z)
@@ -474,6 +505,9 @@ void install_overrides()
         gl::register_hook("glColor4f", reinterpret_cast<PROC>(&gl_color4f_ovr));
         gl::register_hook("glNormal3f", reinterpret_cast<PROC>(&gl_normal3f_ovr));
         gl::register_hook("glTexCoord2f", reinterpret_cast<PROC>(&gl_tex_coord2f_ovr));
+        gl::register_hook("glVertex2fv", reinterpret_cast<PROC>(&gl_vertex2fv_ovr));
+        gl::register_hook("glColor3ub", reinterpret_cast<PROC>(&gl_color3ub_ovr));
+        gl::register_hook("glNormal3fv", reinterpret_cast<PROC>(&gl_normal3fv_ovr));
 
         /* DISPLAY LISTS */
         gl::register_hook("glCallList", reinterpret_cast<PROC>(&gl_call_list_ovr));
@@ -502,9 +536,11 @@ void install_overrides()
         gl::register_hook("glLoadIdentity", reinterpret_cast<PROC>(&gl_load_identity_ovr));
         gl::register_hook("glLoadMatrixf", reinterpret_cast<PROC>(&gl_load_matrixf_ovr));
         gl::register_hook("glMultMatrixf", reinterpret_cast<PROC>(&gl_mult_matrixf_ovr));
+        gl::register_hook("glMultMatrixd", reinterpret_cast<PROC>(&gl_mult_matrixd_ovr));
         gl::register_hook("glPushMatrix", reinterpret_cast<PROC>(&gl_push_matrix_ovr));
         gl::register_hook("glPopMatrix", reinterpret_cast<PROC>(&gl_pop_matrix_ovr));
         gl::register_hook("glTranslatef", reinterpret_cast<PROC>(&gl_translatef_ovr));
+        gl::register_hook("glTranslated", reinterpret_cast<PROC>(&gl_translated_ovr));
         gl::register_hook("glRotatef", reinterpret_cast<PROC>(&gl_rotatef_ovr));
         gl::register_hook("glScalef", reinterpret_cast<PROC>(&gl_scalef_ovr));
         gl::register_hook("glViewport", reinterpret_cast<PROC>(&gl_viewport_ovr));
