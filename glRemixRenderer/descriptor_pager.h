@@ -37,6 +37,7 @@ private:
         64,  // MESH_RECORDS
     };
 
+    static_assert(MESH_RECORDS + 1 == END);
     static_assert(END == PAGE_CATEGORIES);
 
 #ifdef PAGE_CATEGORIES
@@ -58,7 +59,7 @@ public:
     // MATERIALS) * (MATERIALS page size) + (VB_IB page size * 1)
     UINT calculate_global_offset(PageType type, UINT page_index) const;
 
-    // This should only be called once per frame
+    // This should only be called once per frame. Does not handle mesh records
     void copy_pages_to_gpu(const D3D12Context& context, D3D12DescriptorHeap* gpu_heap, UINT offset);
 };
 }  // namespace glRemix::dx

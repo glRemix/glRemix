@@ -1390,6 +1390,7 @@ void glRemix::glRemixRenderer::render()
     m_descriptor_pager.copy_pages_to_gpu(m_context, &m_GPU_descriptor_heap,
                                          reserved_descriptor_offset);
 
+    // Manually copy mesh records
     for (UINT64 i = 0; i < m_gpu_meshrecord_buffers.size(); i++)
     {
         const auto& mesh_record_buffer_for_frame = m_gpu_meshrecord_buffers[i][get_frame_index()];
@@ -1398,8 +1399,9 @@ void glRemix::glRemixRenderer::render()
         dx::D3D12Descriptor dst_gpu{
             .heap = &m_GPU_descriptor_heap,
             .offset = reserved_descriptor_offset
-                + m_descriptor_pager.calculate_global_offset(dx::DescriptorPager::MESH_RECORDS, 0)
-                + static_cast<UINT>(i),
+                      + m_descriptor_pager.calculate_global_offset(dx::DescriptorPager::MESH_RECORDS,
+                                                                   0)
+                      + static_cast<UINT>(i),
         };
 
         m_context.copy_descriptors(dst_gpu, mesh_record_buffer_for_frame.descriptor, 1);
