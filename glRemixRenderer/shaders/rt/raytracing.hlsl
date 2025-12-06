@@ -402,7 +402,7 @@ void ClosestHitMain(inout RayPayload payload, in TriAttributes attr)
     // Calculate which buffer and index within that buffer
     const uint instance_id = InstanceID();
 // TODO: Something here is wrong
-    const uint buffer_index = instance_id / MESHRECORDS_PER_BUFFER + g_raygen_cb.frame_index;
+    const uint buffer_index = instance_id / MESHRECORDS_PER_BUFFER * 2 + g_raygen_cb.frame_index;
     const uint local_index = instance_id % MESHRECORDS_PER_BUFFER;
     const GPUMeshRecord mesh = meshes[NonUniformResourceIndex(buffer_index)][local_index];
 
