@@ -930,17 +930,14 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
                                old_max_bb[2] - old_min_bb[2] };
     std::array new_bb_size = { max_bb.x - min_bb.x, max_bb.y - min_bb.y, max_bb.z - min_bb.z };
 
-    std::array scale_factors = { 1.0f, 1.0f, 1.0f };
-    for (int i = 0; i < 3; ++i)
-    {
-        if (new_bb_size[i] > 0.0f)
-        {
-            scale_factors[i] = old_bb_size[i] / new_bb_size[i];
-        }
-    }
+    float old_diag = std::sqrt(old_bb_size[0] * old_bb_size[0] + old_bb_size[1] * old_bb_size[1]
+                               + old_bb_size[2] * old_bb_size[2]);
+    float new_diag = std::sqrt(new_bb_size[0] * new_bb_size[0] + new_bb_size[1] * new_bb_size[1]
+                               + new_bb_size[2] * new_bb_size[2]);
+    float uniform_scale = (new_diag > 0.0f) ? (old_diag / new_diag) : 1.0f;
 
     // transform new vertices by replaced mesh's modelview matrix (uniform scale only)
-    transform_replacement_vertices(new_vertices, scale_factors);
+    transform_replacement_vertices(new_vertices, uniform_scale);
 
     // put new mesh into pending geometries
     UINT64 new_mesh_hash = compute_mesh_hash(new_vertices, new_indices);
@@ -972,11 +969,9 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
 }
 
 void glRemix::glRemixRenderer::transform_replacement_vertices(std::vector<Vertex>& gltf_vertices,
-                                                              std::array<float, 3> scale_val)
+                                                              float scale_val)
 {
-    // ensure uniform scale
-    float max_scale = std::max(std::max(scale_val[0], scale_val[1]), scale_val[2]);
-    XMMATRIX scale_mat = XMMatrixScaling(max_scale, max_scale, max_scale);
+    XMMATRIX scale_mat = XMMatrixScaling(scale_val, scale_val, scale_val);
     XMMATRIX normal_mat = XMMatrixTranspose(XMMatrixInverse(nullptr, scale_mat));
 
     for (auto& v : gltf_vertices)
