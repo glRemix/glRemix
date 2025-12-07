@@ -3,6 +3,8 @@
 #include <basetsd.h>
 #include <memory>
 
+#include "math_utils.h"
+
 namespace glRemix
 {
 class Arena
@@ -12,6 +14,7 @@ class Arena
     size_t m_offset = 0;
 
 public:
+    const size_t& capacity = m_capacity;
     void init(size_t capacity);
     // Resets offset. Does not zero memory.
     void reset();
@@ -38,6 +41,7 @@ public:
     }
 };
 
-Arena& get_arena();
+// Use the same argument per thread, we don't allow reallocation.
+Arena& get_arena(size_t capacity = 64 * MEGABYTE);
 
 }  // namespace glRemix

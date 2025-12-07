@@ -41,12 +41,14 @@ void* Arena::alloc(const size_t size, const size_t alignment)
 thread_local Arena arena;
 thread_local bool initialized;
 
-Arena& glRemix::get_arena()
+Arena& glRemix::get_arena(const size_t capacity)
 {
     if (!initialized)
     {
-        arena.init(64 * MEGABYTE);  // TODO: Make configurable or increase size
+        arena.init(capacity);
         initialized = true;
     }
+    // Not allowed to change capacity after first use
+    assert(capacity <= arena.capacity);
     return arena;
 }
