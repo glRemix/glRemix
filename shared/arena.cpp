@@ -32,7 +32,6 @@ void* Arena::alloc(const size_t size, const size_t alignment)
     void* ptr = m_memory.get() + m_offset;
     m_offset += size;
 
-    std::memset(ptr, 0, size);
     return ptr;
 }
 

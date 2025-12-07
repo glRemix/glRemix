@@ -19,7 +19,7 @@ public:
     // Resets offset. Does not zero memory.
     void reset();
 
-    // Returns zeroed block of given size and alignment. Returns null if arena is full.
+    // Returns uninitialized block of given size and alignment. Returns null if arena is full.
     void* alloc(size_t size, size_t alignment = alignof(std::max_align_t));
 
     // Returns default initialized array of given type. Returns null if arena is full.
