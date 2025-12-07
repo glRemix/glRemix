@@ -3,6 +3,9 @@
 #include <array>
 #include <cassert>
 #include <iomanip>
+#include <stdexcept>
+
+#include "shared/arena.h"
 
 namespace glRemix::dx
 {
@@ -291,21 +294,26 @@ bool mark_use(Resource& resource, const Usage usage)
 }
 
 void emit_barriers(ID3D12GraphicsCommandList7* command_list, Resource* const* resources,
-                   const size_t resource_count, std::vector<BarrierLogEvent>* debug_log)
+                   const size_t resource_count)
 {
-    // If all the meshes are suddenly sent in one frame this will overflow
-    // TODO: Replace with arena allocator
-    constexpr size_t max_texture_barriers = 101;
-    constexpr size_t max_buffer_barriers = 101;
-    constexpr size_t max_barrier_groups = 2;
+    assert(command_list);
+    if (resource_count == 0)
+    {
+        return;
+    }
 
-    std::vector<D3D12_TEXTURE_BARRIER> texture_barriers;
-    std::vector<D3D12_BUFFER_BARRIER> buffer_barriers;
-    std::vector<D3D12_BARRIER_GROUP> barrier_groups;
+    auto& arena = get_arena();
+    const auto texture_barriers = arena.alloc_array<D3D12_TEXTURE_BARRIER>(resource_count);
+    const auto buffer_barriers = arena.alloc_array<D3D12_BUFFER_BARRIER>(resource_count);
+    if (!texture_barriers || !buffer_barriers)
+    {
+        throw std::runtime_error("Arena exhausted");
+    }
+    size_t texture_barrier_count = 0;
+    size_t buffer_barrier_count = 0;
 
-    texture_barriers.reserve(resource_count);
-    buffer_barriers.reserve(resource_count);
-    barrier_groups.reserve(2);
+    std::array<D3D12_BARRIER_GROUP, 2> barrier_groups;
+    size_t barrier_group_count = 0;
 
     for (size_t i = 0; i < resource_count; ++i)
     {
@@ -322,11 +330,10 @@ void emit_barriers(ID3D12GraphicsCommandList7* command_list, Resource* const* re
                                                        : D3D12_BARRIER_ACCESS_NO_ACCESS;
         const D3D12_BARRIER_SYNC sync_before = resource.tracked_valid ? resource.tracked_sync
                                                                       : D3D12_BARRIER_SYNC_NONE;
-        const D3D12_BARRIER_LAYOUT layout_before = resource.tracked_valid
-                                                       ? resource.tracked_layout
-                                                       : (resource.is_texture
-                                                              ? D3D12_BARRIER_LAYOUT_UNDEFINED
-                                                              : D3D12_BARRIER_LAYOUT_COMMON);
+        const D3D12_BARRIER_LAYOUT layout_before = resource.tracked_valid ? resource.tracked_layout
+                                                   : resource.is_texture
+                                                       ? D3D12_BARRIER_LAYOUT_UNDEFINED
+                                                       : D3D12_BARRIER_LAYOUT_COMMON;
 
         if (resource.is_texture)
         {
@@ -349,22 +356,7 @@ void emit_barriers(ID3D12GraphicsCommandList7* command_list, Resource* const* re
 
             if (requires_barrier)
             {
-                texture_barriers.push_back(barrier);
-
-                if (debug_log)
-                {
-                    BarrierLogEvent event{
-                        .resource = resource.resource,
-                        .barrier_type = D3D12_BARRIER_TYPE_TEXTURE,
-                        .access_before = barrier.AccessBefore,
-                        .access_after = barrier.AccessAfter,
-                        .sync_before = barrier.SyncBefore,
-                        .sync_after = barrier.SyncAfter,
-                        .layout_before = barrier.LayoutBefore,
-                        .layout_after = barrier.LayoutAfter,
-                    };
-                    debug_log->push_back(event);
-                }
+                texture_barriers[texture_barrier_count++] = barrier;
             }
         }
         else
@@ -390,22 +382,7 @@ void emit_barriers(ID3D12GraphicsCommandList7* command_list, Resource* const* re
 
             if (requires_barrier)
             {
-                buffer_barriers.push_back(barrier);
-
-                if (debug_log)
-                {
-                    BarrierLogEvent event{
-                        .resource = resource.resource,
-                        .barrier_type = D3D12_BARRIER_TYPE_BUFFER,
-                        .access_before = barrier.AccessBefore,
-                        .access_after = barrier.AccessAfter,
-                        .sync_before = barrier.SyncBefore,
-                        .sync_after = barrier.SyncAfter,
-                        .layout_before = D3D12_BARRIER_LAYOUT_UNDEFINED,
-                        .layout_after = D3D12_BARRIER_LAYOUT_UNDEFINED,
-                    };
-                    debug_log->push_back(event);
-                }
+                buffer_barriers[buffer_barrier_count++] = barrier;
             }
         }
 
@@ -428,27 +405,27 @@ void emit_barriers(ID3D12GraphicsCommandList7* command_list, Resource* const* re
         }
     }
 
-    if (!texture_barriers.empty())
+    if (texture_barrier_count > 0)
     {
-        barrier_groups.push_back(D3D12_BARRIER_GROUP{
+        barrier_groups[barrier_group_count++] = {
             .Type = D3D12_BARRIER_TYPE_TEXTURE,
-            .NumBarriers = static_cast<UINT>(texture_barriers.size()),
-            .pTextureBarriers = texture_barriers.data(),
-        });
+            .NumBarriers = static_cast<UINT>(texture_barrier_count),
+            .pTextureBarriers = texture_barriers,
+        };
     }
 
-    if (!buffer_barriers.empty())
+    if (buffer_barrier_count > 0)
     {
-        barrier_groups.push_back(D3D12_BARRIER_GROUP{
+        barrier_groups[barrier_group_count++] = {
             .Type = D3D12_BARRIER_TYPE_BUFFER,
-            .NumBarriers = static_cast<UINT>(buffer_barriers.size()),
-            .pBufferBarriers = buffer_barriers.data(),
-        });
+            .NumBarriers = static_cast<UINT>(buffer_barrier_count),
+            .pBufferBarriers = buffer_barriers,
+        };
     }
 
-    if (!barrier_groups.empty() && command_list)
+    if (barrier_group_count > 0)
     {
-        command_list->Barrier(static_cast<UINT>(barrier_groups.size()), barrier_groups.data());
+        command_list->Barrier(static_cast<UINT>(barrier_group_count), barrier_groups.data());
     }
 }
 }  // namespace glRemix::dx
