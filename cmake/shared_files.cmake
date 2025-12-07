@@ -19,11 +19,13 @@ set(GLREMIX_SHARED_HEADER_NAMES
     "math_utils.h"
     "debug_utils.h"
     "${containers}/free_list_vector.h"
+    "arena.h"
 )
 
 set(GLREMIX_SHARED_SOURCE_NAMES
     "shared_memory.cpp"
     "ipc_protocol.cpp"
+    "arena.cpp"
 )
 
 set(GLREMIX_SHARED_HEADER_FILES)

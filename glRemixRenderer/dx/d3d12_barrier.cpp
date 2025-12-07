@@ -5,7 +5,7 @@
 #include <iomanip>
 #include <stdexcept>
 
-#include "arena.h"
+#include "shared/arena.h"
 
 namespace glRemix::dx
 {

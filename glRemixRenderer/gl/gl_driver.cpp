@@ -4,7 +4,7 @@
 
 #include "gl_command_utils.h"
 #include <shared/gl_utils.h>
-#include "arena.h"
+#include "shared/arena.h"
 
 #include <Windows.h>
 LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);

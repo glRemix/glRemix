@@ -2,9 +2,8 @@
 #include <fastgltf/core.hpp>
 #include <fastgltf/tools.hpp>
 #include <DirectXMath.h>
-#include "dx/d3d12_as.h"
 #include "structs.h"
-#include "arena.h"
+#include "shared/arena.h"
 
 #include <filesystem>
 #include <vector>

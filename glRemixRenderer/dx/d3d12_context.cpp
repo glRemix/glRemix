@@ -8,7 +8,7 @@
 #include <shared/math_utils.h>
 
 #include "application.h"
-#include "arena.h"
+#include "shared/arena.h"
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"

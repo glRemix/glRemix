@@ -1,6 +1,6 @@
 #include "rt_app.h"
 #include "mesh_loader.h"
-#include "arena.h"
+#include "shared/arena.h"
 
 #include <chrono>
 #include <vector>
