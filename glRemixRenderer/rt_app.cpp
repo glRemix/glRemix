@@ -986,7 +986,9 @@ void glRemix::glRemixRenderer::replace_mesh(UINT64 meshID, const char* new_asset
 void glRemix::glRemixRenderer::transform_replacement_vertices(std::vector<Vertex>& gltf_vertices,
                                                               std::array<float, 3> scale_val)
 {
-    XMMATRIX scale_mat = XMMatrixScaling(scale_val[0], scale_val[1], scale_val[2]);
+    // ensure uniform scale
+    float max_scale = std::max(std::max(scale_val[0], scale_val[1]), scale_val[2]);
+    XMMATRIX scale_mat = XMMatrixScaling(max_scale, max_scale, max_scale);
     XMMATRIX normal_mat = XMMatrixTranspose(XMMatrixInverse(nullptr, scale_mat));
 
     for (auto& v : gltf_vertices)
