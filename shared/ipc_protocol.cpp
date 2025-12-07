@@ -38,9 +38,10 @@ void glRemix::IPCProtocol::start_frame_or_wait()
             latest = &m_slot_A;
         }
 
-        HANDLE tmp_events[2] = { oldest->smem.get_read_event(), latest->smem.get_read_event() };
+        HANDLE tmp_events[3] = { oldest->smem.get_read_event(), latest->smem.get_read_event(),
+                                 this->m_reader_shutdown_event_handle };
 
-        DWORD dw_wait_result = WaitForMultipleObjects(2, tmp_events, false, INFINITE);
+        DWORD dw_wait_result = WaitForMultipleObjects(3, tmp_events, false, INFINITE);
 
         switch (dw_wait_result)
         {
@@ -144,9 +145,10 @@ void glRemix::IPCProtocol::consume_frame_or_wait(void* payload, UINT32* frame_in
             latest = &m_slot_A;
         }
 
-        HANDLE tmp_events[2] = { oldest->smem.get_write_event(), latest->smem.get_write_event() };
+        HANDLE tmp_events[3] = { oldest->smem.get_write_event(), latest->smem.get_write_event(),
+                                 this->m_writer_shutdown_event_handle };
 
-        DWORD dw_wait_result = WaitForMultipleObjects(2, tmp_events, false, INFINITE);
+        DWORD dw_wait_result = WaitForMultipleObjects(3, tmp_events, false, INFINITE);
 
         switch (dw_wait_result)
         {
