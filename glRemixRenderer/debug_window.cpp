@@ -166,7 +166,7 @@ void DebugWindow::render_performance_stats()
     ImGui::Text("Mesh Count: %zu", m_mesh_stats.num_meshes);
 
     ImGui::Text("Texture Count: %zu", m_mesh_stats.num_textures);
-
+    ImGui::Text("Material Count: %zu", m_mesh_stats.num_materials);
     // TODO: More stats like heap allocations, allocate descriptors, memory usage, etc
 }
 

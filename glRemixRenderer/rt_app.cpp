@@ -241,11 +241,11 @@ void glRemix::glRemixRenderer::create()
             .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
         };
 
-        // Environment map at t2
+        // Environment map at t1
         descriptor_ranges[3] = {
             .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
             .NumDescriptors = 1,
-            .BaseShaderRegister = 2,
+            .BaseShaderRegister = 1,
             .RegisterSpace = 0,
             .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
         };
@@ -254,8 +254,8 @@ void glRemix::glRemixRenderer::create()
         D3D12_DESCRIPTOR_RANGE mesh_record_range{
 
             .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
-            .NumDescriptors = 1,
-            .BaseShaderRegister = 1,  // t1
+            .NumDescriptors = UINT_MAX,  // Unbounded array
+            .BaseShaderRegister = 2,     // t2
             .RegisterSpace = 0,
             .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
         };
@@ -1237,6 +1237,7 @@ void glRemix::glRemixRenderer::render()
             .num_meshes_rendered = state.m_meshes.size(),
             .num_meshes = m_mesh_resources.size() - m_mesh_resources.freed_size(),
             .num_textures = m_texture_map.size(),
+            .num_materials = state.m_materials.size(),
         };
         m_debug_window.set_mesh_stats(mesh_stats);
     }
@@ -1378,6 +1379,23 @@ void glRemix::glRemixRenderer::render()
     m_descriptor_pager.copy_pages_to_gpu(m_context, &m_GPU_descriptor_heap,
                                          reserved_descriptor_offset);
 
+    // Manually copy mesh records
+    for (UINT64 i = 0; i < m_gpu_meshrecord_buffers.size(); i++)
+    {
+        const auto& mesh_record_buffer_for_frame = m_gpu_meshrecord_buffers[i][get_frame_index()];
+
+        // contiguous region starting after paged descriptors
+        dx::D3D12Descriptor dst_gpu{
+            .heap = &m_GPU_descriptor_heap,
+            .offset = reserved_descriptor_offset
+                      + m_descriptor_pager.calculate_global_offset(dx::DescriptorPager::MESH_RECORDS,
+                                                                   0)
+                      + static_cast<UINT>(i),
+        };
+
+        m_context.copy_descriptors(dst_gpu, mesh_record_buffer_for_frame.descriptor, 1);
+    }
+
 #ifdef GLREMIX_DYNAMIC_MESH_CAP
     state.m_last_rendered_mesh_count = std::max(gpu_mesh_records_to_copy.size(),
                                                 state.m_last_rendered_mesh_count);
@@ -1411,6 +1429,7 @@ void glRemix::glRemixRenderer::render()
             .dimensions = win_dims,
             .mirror_mode = m_debug_window.m_parameters.mirror_mode,
             .mirror_threshold = m_debug_window.m_parameters.mirror_threshold,
+            .frame_index = get_frame_index(),
         };
         XMStoreFloat4x4(&raygen_cb.view_proj, XMMatrixTranspose(proj));
         XMStoreFloat4x4(&raygen_cb.inv_view_proj, XMMatrixTranspose(inv_proj));

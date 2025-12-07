@@ -84,7 +84,6 @@ class glRemixRenderer : public Application
 
     // Materials per buffer
     // TODO: Make this a macro instead?
-    static constexpr UINT MESHRECORDS_PER_BUFFER = 256;
     static constexpr UINT MATERIALS_PER_BUFFER = 256;
 
     // This is written to by CPU potentially in two consecutive frames so we need to double buffer it
