@@ -1,5 +1,6 @@
 #include "rt_app.h"
 #include "mesh_loader.h"
+#include "shared/arena.h"
 
 #include <chrono>
 #include <vector>
@@ -240,11 +241,11 @@ void glRemix::glRemixRenderer::create()
             .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
         };
 
-        // Environment map at t2
+        // Environment map at t1
         descriptor_ranges[3] = {
             .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
             .NumDescriptors = 1,
-            .BaseShaderRegister = 2,
+            .BaseShaderRegister = 1,
             .RegisterSpace = 0,
             .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
         };
@@ -253,8 +254,8 @@ void glRemix::glRemixRenderer::create()
         D3D12_DESCRIPTOR_RANGE mesh_record_range{
 
             .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
-            .NumDescriptors = 1,
-            .BaseShaderRegister = 1,  // t1
+            .NumDescriptors = UINT_MAX,  // Unbounded array
+            .BaseShaderRegister = 2,     // t2
             .RegisterSpace = 0,
             .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
         };
@@ -480,8 +481,10 @@ void glRemix::glRemixRenderer::create_pending_buffers(ID3D12GraphicsCommandList7
         return;
     }
 
-    // TODO: Replace with static allocator
-    std::vector<size_t> pending_indices;
+    const size_t pending_geometry_count = state.m_pending_geometries.size();
+    auto pending_indices = get_arena().alloc_array<size_t>(pending_geometry_count);
+    THROW_IF_FALSE(pending_indices);
+    size_t pending_index_count = 0;
 
     // Create all vertex and index buffers first
     for (size_t i = 0; i < state.m_pending_geometries.size(); ++i)
@@ -526,7 +529,7 @@ void glRemix::glRemixRenderer::create_pending_buffers(ID3D12GraphicsCommandList7
         m_context.create_shader_resource_view(ib.buffer, ib.descriptor);
 
         int idx = m_mesh_resources.push_back(std::move(resource));
-        pending_indices.push_back(idx);
+        pending_indices[pending_index_count++] = static_cast<size_t>(idx);
 
         // Cache the geometry
         const UINT32 resource_idx = static_cast<UINT32>(idx);
@@ -562,7 +565,7 @@ void glRemix::glRemixRenderer::create_pending_buffers(ID3D12GraphicsCommandList7
     }
 
     // Build all BLAS in a single batch
-    build_mesh_blas_batch(pending_indices, state.m_pending_geometries.size(), cmd_list);
+    build_mesh_blas_batch(pending_indices, pending_index_count, cmd_list);
 
     state.m_pending_geometries.clear();
 }
@@ -574,6 +577,11 @@ bool glRemix::glRemixRenderer::create_pending_textures(ID3D12GraphicsCommandList
     {
         return false;
     }
+
+    const size_t pending_texture_count = state.m_pending_textures.size();
+    auto textures_to_barrier = get_arena().alloc_array<dx::D3D12Texture*>(pending_texture_count);
+    THROW_IF_FALSE(textures_to_barrier);
+    size_t texture_barrier_count = 0;
 
     for (auto& kv : state.m_pending_textures)
     {
@@ -598,20 +606,17 @@ bool glRemix::glRemixRenderer::create_pending_textures(ID3D12GraphicsCommandList
         m_texture_map[pending.index] = std::move(texture);
     }
 
-    // TODO: Use static allocator
-    std::vector<dx::D3D12Texture*> textures_to_barrier;
     for (auto& kv : state.m_pending_textures)
     {
         auto& stored = m_texture_map[kv.second.index];
-        textures_to_barrier.push_back(&stored.texture);
+        textures_to_barrier[texture_barrier_count++] = &stored.texture;
     }
 
-    for (auto* tex : textures_to_barrier)
+    for (size_t i = 0; i < texture_barrier_count; ++i)
     {
-        m_context.mark_use(tex, dx::Usage::SRV_RT);
+        m_context.mark_use(textures_to_barrier[i], dx::Usage::SRV_RT);
     }
-    m_context.emit_barriers(cmd_list, nullptr, 0, textures_to_barrier.data(),
-                            textures_to_barrier.size());
+    m_context.emit_barriers(cmd_list, nullptr, 0, textures_to_barrier, texture_barrier_count);
 
     THROW_IF_FALSE(SUCCEEDED(cmd_list->Close()));
     const std::array<ID3D12CommandList*, 1> lists = { cmd_list };
@@ -621,7 +626,7 @@ bool glRemix::glRemixRenderer::create_pending_textures(ID3D12GraphicsCommandList
     return true;
 }
 
-void glRemix::glRemixRenderer::build_mesh_blas_batch(std::vector<size_t> pending_indices,
+void glRemix::glRemixRenderer::build_mesh_blas_batch(const size_t* pending_indices,
                                                      const size_t count,
                                                      ID3D12GraphicsCommandList7* cmd_list)
 {
@@ -630,23 +635,15 @@ void glRemix::glRemixRenderer::build_mesh_blas_batch(std::vector<size_t> pending
         return;
     }
 
-    // TODO: Use static allocator this is terrible
-    // Or break up the batches. Put a hard cap on number of BLAS built at once
-    // Can call this function recursively for remaining builds
-    static std::vector<D3D12_RAYTRACING_GEOMETRY_DESC> geometry_descs;
-    static std::vector<UINT64> scratch_sizes;
-    static std::vector<UINT64> scratch_offsets;
-
-    geometry_descs.clear();
-    scratch_sizes.clear();
-    scratch_offsets.clear();
-
-    geometry_descs.reserve(count);
-    scratch_sizes.reserve(count);
-    scratch_offsets.reserve(count);
+    auto& arena = get_arena();
+    auto geometry_descs = arena.alloc_array<D3D12_RAYTRACING_GEOMETRY_DESC>(count);
+    auto scratch_sizes = arena.alloc_array<UINT64>(count);
+    auto scratch_offsets = arena.alloc_array<UINT64>(count);
+    auto blas_barrier_ptrs = arena.alloc_array<dx::D3D12Buffer*>(count);
+    THROW_IF_FALSE(geometry_descs && scratch_sizes && scratch_offsets && blas_barrier_ptrs);
 
     // Create all BLAS buffers and compute scratch sizes
-    for (size_t i = 0; i < pending_indices.size(); i++)
+    for (size_t i = 0; i < count; i++)
     {
         auto& info = m_mesh_resources[pending_indices[i]];
 
@@ -657,19 +654,19 @@ void glRemix::glRemixRenderer::build_mesh_blas_batch(std::vector<size_t> pending
             .Triangles = m_context.get_buffer_rt_description(&info.vertex_buffer.buffer,
                                                              &info.index_buffer.buffer),
         };
-        geometry_descs.push_back(tri_desc);
+        geometry_descs[i] = tri_desc;
 
         D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS blas_input{
             .Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL,
             .Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_NONE,
             .NumDescs = 1,
             .DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY,
-            .pGeometryDescs = &geometry_descs.back(),
+            .pGeometryDescs = &geometry_descs[i],
         };
 
         const auto blas_prebuild_info = m_context.get_acceleration_structure_prebuild_info(
             blas_input);
-        scratch_sizes.push_back(blas_prebuild_info.ScratchDataSizeInBytes);
+        scratch_sizes[i] = blas_prebuild_info.ScratchDataSizeInBytes;
 
         dx::BufferDesc blas_buffer_desc{
             .size = blas_prebuild_info.ResultDataMaxSizeInBytes,
@@ -678,11 +675,12 @@ void glRemix::glRemixRenderer::build_mesh_blas_batch(std::vector<size_t> pending
             .acceleration_structure = true,
         };
         THROW_IF_FALSE(m_context.create_buffer(blas_buffer_desc, &info.blas, "BLAS buffer"));
+        blas_barrier_ptrs[i] = &info.blas;
     }
 
     // Mark all resources for BLAS build
     m_context.mark_use(&m_scratch_space, dx::Usage::UAV_COMPUTE);
-    for (size_t i = 0; i < pending_indices.size(); i++)
+    for (size_t i = 0; i < count; i++)
     {
         m_context.mark_use(&m_mesh_resources[pending_indices[i]].blas, dx::Usage::AS_WRITE);
     }
@@ -690,26 +688,17 @@ void glRemix::glRemixRenderer::build_mesh_blas_batch(std::vector<size_t> pending
     m_context.emit_barriers(cmd_list, scratch_array.data(), scratch_array.size(), nullptr, 0);
 
     // Emit barriers for all BLAS buffers
-    // TODO: Get rid of this and replace with static allocator
-    static std::vector<dx::D3D12Buffer*> blas_barrier_ptrs;
-    blas_barrier_ptrs.clear();
-    for (size_t i = 0; i < pending_indices.size(); i++)
-    {
-        blas_barrier_ptrs.push_back(&m_mesh_resources[pending_indices[i]].blas);
-    }
-    m_context.emit_barriers(cmd_list, blas_barrier_ptrs.data(), blas_barrier_ptrs.size(), nullptr,
-                            0);
+    m_context.emit_barriers(cmd_list, blas_barrier_ptrs, count, nullptr, 0);
 
     // Build all BLAS in repeated partial batches
     size_t build_start = 0;
-    while (build_start < pending_indices.size())
+    while (build_start < count)
     {
-        scratch_offsets.clear();
         UINT64 running_total = 0;
         size_t batch_count = 0;
 
         // Compute how many builds fit this batch and their offsets
-        for (size_t j = build_start; j < pending_indices.size(); j++)
+        for (size_t j = build_start; j < count; j++)
         {
             // Alignment requirement: 256 multiple needed between scratch regions
             running_total = align_u64(running_total,
@@ -717,7 +706,7 @@ void glRemix::glRemixRenderer::build_mesh_blas_batch(std::vector<size_t> pending
             const UINT64 next_total = running_total + scratch_sizes[j];
             if (next_total <= m_scratch_space.desc.size)
             {
-                scratch_offsets.push_back(running_total);
+                scratch_offsets[batch_count] = running_total;
                 running_total = next_total;
                 batch_count++;
             }
@@ -777,12 +766,11 @@ void glRemix::glRemixRenderer::build_mesh_blas_batch(std::vector<size_t> pending
     }
 
     // Transition all BLAS to read state
-    for (size_t i = 0; i < pending_indices.size(); i++)
+    for (size_t i = 0; i < count; i++)
     {
         m_context.mark_use(&m_mesh_resources[pending_indices[i]].blas, dx::Usage::AS_READ);
     }
-    m_context.emit_barriers(cmd_list, blas_barrier_ptrs.data(), blas_barrier_ptrs.size(), nullptr,
-                            0);
+    m_context.emit_barriers(cmd_list, blas_barrier_ptrs, count, nullptr, 0);
 }
 
 static D3D12_RAYTRACING_INSTANCE_DESC mv_to_instance_desc(const XMFLOAT4X4& mv)
@@ -1017,12 +1005,8 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
         return;
     }
 
-    // TODO: Replace with arena allocator
-    static std::vector<D3D12_RAYTRACING_INSTANCE_DESC> instance_descs(instance_count);
-    if (instance_count > instance_descs.size())
-    {
-        instance_descs.resize(instance_count);
-    }
+    auto instance_descs = get_arena().alloc_array<D3D12_RAYTRACING_INSTANCE_DESC>(instance_count);
+    THROW_IF_FALSE(instance_descs);
 
     UINT valid_instance_count = 0;
     for (UINT i = 0; i < instance_count; i++)
@@ -1077,8 +1061,7 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
 
     void* cpu_ptr;
     THROW_IF_FALSE(m_context.map_buffer(&m_tlas.instance, &cpu_ptr));
-    memcpy(cpu_ptr, instance_descs.data(),
-           sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * valid_instance_count);
+    memcpy(cpu_ptr, instance_descs, sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * valid_instance_count);
     m_context.unmap_buffer(&m_tlas.instance);
 
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS tlas_desc{
@@ -1151,6 +1134,7 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
 
 void glRemix::glRemixRenderer::render()
 {
+    get_arena().reset();
     // Read GL stream and set resources accordingly
     auto& state = sm_driver.get_state();
 
@@ -1255,6 +1239,7 @@ void glRemix::glRemixRenderer::render()
             .num_meshes_rendered = state.m_meshes.size(),
             .num_meshes = m_mesh_resources.size() - m_mesh_resources.freed_size(),
             .num_textures = m_texture_map.size(),
+            .num_materials = state.m_materials.size(),
         };
         m_debug_window.set_mesh_stats(mesh_stats);
     }
@@ -1296,8 +1281,11 @@ void glRemix::glRemixRenderer::render()
     constexpr auto reserved_descriptor_offset = 5;
     // Update mesh records vector with global indices based off current paging status
     // This is done in place on the per frame vector of MeshRecords
-    static std::vector<GPUMeshRecord> gpu_mesh_records_to_copy;
-    gpu_mesh_records_to_copy.clear();
+    const auto mesh_capacity = state.m_meshes.size();
+    auto gpu_mesh_records_to_copy = mesh_capacity
+                                        ? get_arena().alloc_array<GPUMeshRecord>(mesh_capacity)
+                                        : nullptr;
+    size_t gpu_mesh_record_count = 0;
     for (auto& mesh_copy : state.m_meshes)
     {
         // Skip meshes that have been removed from mesh_map (expired)
@@ -1367,11 +1355,11 @@ void glRemix::glRemixRenderer::render()
                 gpu_mesh.tex_idx_2 = tex_desc_offset + tex_offset + reserved_descriptor_offset;
             }
         }
-        gpu_mesh_records_to_copy.push_back(gpu_mesh);
+        gpu_mesh_records_to_copy[gpu_mesh_record_count++] = gpu_mesh;
     }
 
     // Copy the processed GPU mesh records to the GPU buffers
-    const auto gpu_meshrecord_buffers_to_update = ceil_div(gpu_mesh_records_to_copy.size(),
+    const auto gpu_meshrecord_buffers_to_update = ceil_div(gpu_mesh_record_count,
                                                            MESHRECORDS_PER_BUFFER);
     for (UINT64 i = 0; i < gpu_meshrecord_buffers_to_update; i++)
     {
@@ -1379,17 +1367,36 @@ void glRemix::glRemixRenderer::render()
         void* mesh_record_ptr;
         THROW_IF_FALSE(m_context.map_buffer(&mesh_record_buffer.buffer, &mesh_record_ptr));
         const auto start_idx = i * MESHRECORDS_PER_BUFFER;
-        assert(!u64_overflows_u32(gpu_mesh_records_to_copy.size()));
-        const auto end_idx = std::min(start_idx + MESHRECORDS_PER_BUFFER,
-                                      gpu_mesh_records_to_copy.size());
+        assert(!u64_overflows_u32(gpu_mesh_record_count));
+        const auto end_idx = std::min(start_idx + MESHRECORDS_PER_BUFFER, gpu_mesh_record_count);
+        assert(start_idx < end_idx);
+
         const auto mesh_record_count = end_idx - start_idx;
-        memcpy(mesh_record_ptr, gpu_mesh_records_to_copy.data() + start_idx,
+        memcpy(mesh_record_ptr, gpu_mesh_records_to_copy + start_idx,
                sizeof(GPUMeshRecord) * mesh_record_count);
+
         m_context.unmap_buffer(&mesh_record_buffer.buffer);
     }
 
     m_descriptor_pager.copy_pages_to_gpu(m_context, &m_GPU_descriptor_heap,
                                          reserved_descriptor_offset);
+
+    // Manually copy mesh records
+    for (UINT64 i = 0; i < m_gpu_meshrecord_buffers.size(); i++)
+    {
+        const auto& mesh_record_buffer_for_frame = m_gpu_meshrecord_buffers[i][get_frame_index()];
+
+        // contiguous region starting after paged descriptors
+        dx::D3D12Descriptor dst_gpu{
+            .heap = &m_GPU_descriptor_heap,
+            .offset = reserved_descriptor_offset
+                      + m_descriptor_pager.calculate_global_offset(dx::DescriptorPager::MESH_RECORDS,
+                                                                   0)
+                      + static_cast<UINT>(i),
+        };
+
+        m_context.copy_descriptors(dst_gpu, mesh_record_buffer_for_frame.descriptor, 1);
+    }
 
 #ifdef GLREMIX_DYNAMIC_MESH_CAP
     state.m_last_rendered_mesh_count = std::max(gpu_mesh_records_to_copy.size(),
@@ -1400,7 +1407,7 @@ void glRemix::glRemixRenderer::render()
     std::call_once(m_create_env_once, [&] { create_environment_map(cmd_list.Get(), m_env_path); });
 
     // Dispatch rays to UAV render target
-    if (!gpu_mesh_records_to_copy.empty())
+    if (gpu_mesh_record_count > 0)
     {
         build_tlas(cmd_list.Get());
 
@@ -1424,6 +1431,7 @@ void glRemix::glRemixRenderer::render()
             .dimensions = win_dims,
             .mirror_mode = m_debug_window.m_parameters.mirror_mode,
             .mirror_threshold = m_debug_window.m_parameters.mirror_threshold,
+            .frame_index = get_frame_index(),
         };
         XMStoreFloat4x4(&raygen_cb.view_proj, XMMatrixTranspose(proj));
         XMStoreFloat4x4(&raygen_cb.inv_view_proj, XMMatrixTranspose(inv_proj));

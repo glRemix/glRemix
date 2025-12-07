@@ -74,5 +74,5 @@ void initialize_tracked_resource(Resource* resource, ID3D12Resource* d3d_resourc
 bool mark_use(Resource& resource, Usage usage);
 
 void emit_barriers(ID3D12GraphicsCommandList7* command_list, Resource* const* resources,
-                   size_t resource_count, std::vector<BarrierLogEvent>* debug_log = nullptr);
+                   size_t resource_count);
 }  // namespace glRemix::dx

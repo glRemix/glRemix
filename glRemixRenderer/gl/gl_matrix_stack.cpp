@@ -1,7 +1,7 @@
 #include "gl_matrix_stack.h"
 
+#include <algorithm>
 #include <cmath>
-#include <vector>
 
 using namespace DirectX;
 using namespace glRemix::gl;
@@ -276,54 +276,4 @@ void glMatrixStack::load(const UINT32 mode, const float* m)
 
     stack->top() = { m[0], m[4], m[8],  m[12], m[1], m[5], m[9],  m[13],
                      m[2], m[6], m[10], m[14], m[3], m[7], m[11], m[15] };
-}
-
-void glMatrixStack::print_stacks() const
-{
-    auto print_matrix = [](const XMFLOAT4X4& m, const char* label, const int level)
-    {
-        std::printf("[%s stack level %d]\n", label, level);
-        std::printf("  %.6f  %.6f  %.6f  %.6f\n"
-                    "  %.6f  %.6f  %.6f  %.6f\n"
-                    "  %.6f  %.6f  %.6f  %.6f\n"
-                    "  %.6f  %.6f  %.6f  %.6f\n",
-                    m._11, m._12, m._13, m._14, m._21, m._22, m._23, m._24, m._31, m._32, m._33,
-                    m._34, m._41, m._42, m._43, m._44);
-    };
-
-    auto dump_stack = [&](const std::stack<XMFLOAT4X4>& s, const char* name)
-    {
-        if (s.empty())
-        {
-            std::printf("[%s stack] (empty)\n", name);
-            return;
-        }
-
-        // Copy to preserve original
-        std::stack<XMFLOAT4X4> tmp = s;
-
-        // Collect to vector to print bottom → top
-        std::vector<XMFLOAT4X4> mats;
-        mats.reserve(tmp.size());
-        while (!tmp.empty())
-        {
-            mats.push_back(tmp.top());
-            tmp.pop();
-        }
-
-        // mats[0] is original top; reverse for bottom-first
-        std::reverse(mats.begin(), mats.end());
-
-        std::printf("=== %s stack (%zu matrices, bottom to top) ===\n", name, mats.size());
-        for (size_t i = 0; i < mats.size(); ++i)
-        {
-            print_matrix(mats[i], name, static_cast<int>(i));
-        }
-    };
-
-    std::printf("\n===== glMatrixStack dump =====\n");
-    dump_stack(model_view, "MODELVIEW");
-    dump_stack(projection, "PROJECTION");
-    dump_stack(texture, "TEXTURE");
-    std::printf("===== end dump =====\n\n");
 }

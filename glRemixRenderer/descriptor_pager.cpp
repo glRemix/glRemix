@@ -95,7 +95,7 @@ void glRemix::dx::DescriptorPager::copy_pages_to_gpu(const D3D12Context& context
 #endif
 
     // Copy pages in order starting from offset
-    for (UINT8 type = m_dirty_index; type < END; type++)
+    for (UINT8 type = m_dirty_index; type < MESH_RECORDS; type++)
     {
         auto& pages = m_pages[type];
         const UINT descriptors_per_page = m_descriptors_per_page[type];

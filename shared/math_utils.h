@@ -1,10 +1,11 @@
 #pragma once
 
+#include <windows.h>
 #include <cstdint>
 #include <cassert>
 
-constexpr UINT64 MEGABYTE = 1024ul * 1024ul;
-constexpr UINT CB_ALIGNMENT = 256;
+constexpr UINT64 MEGABYTE = 1024ull * 1024ull;
+constexpr UINT CB_ALIGNMENT = 256u;
 
 inline bool u64_overflows_u32(const UINT64 v)
 {

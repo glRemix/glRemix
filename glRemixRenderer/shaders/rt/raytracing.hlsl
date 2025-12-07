@@ -16,9 +16,9 @@ struct LightCB
 };
 ConstantBuffer<LightCB> light_cb : register(b1);
 
-StructuredBuffer<GPUMeshRecord> meshes : register(t1);
+TextureCube<float4> environment_map : register(t1);
+StructuredBuffer<GPUMeshRecord> meshes[] : register(t2);
 
-TextureCube<float4> environment_map : register(t2);
 SamplerState g_sampler : register(s0);
 
 // https://learn.microsoft.com/en-us/windows/win32/direct3d12/intersection-attributes
@@ -399,7 +399,12 @@ void RayGenMain()
 void ClosestHitMain(inout RayPayload payload, in TriAttributes attr)
 {
     // Fetch mesh record for this instance; indices are into the global SRV heap
-    const GPUMeshRecord mesh = meshes[InstanceID()];
+    // Calculate which buffer and index within that buffer
+    const uint instance_id = InstanceID();
+
+    const uint buffer_index = instance_id / MESHRECORDS_PER_BUFFER;
+    const uint local_index = instance_id % MESHRECORDS_PER_BUFFER;
+    const GPUMeshRecord mesh = meshes[NonUniformResourceIndex(buffer_index)][local_index];
 
     // Bindless fetch of vertex and index buffers from the global SRV heap
     StructuredBuffer<Vertex> vb = ResourceDescriptorHeap[NonUniformResourceIndex(mesh.vb_idx)];

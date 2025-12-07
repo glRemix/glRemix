@@ -3,8 +3,8 @@
 #include <fastgltf/tools.hpp>
 #include <DirectXMath.h>
 #include <DirectXTex.h>
-#include "dx/d3d12_as.h"
 #include "structs.h"
+#include "shared/arena.h"
 
 #include <filesystem>
 #include <vector>
