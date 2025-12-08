@@ -40,6 +40,26 @@ glRemix is a DirectX 12 powered platform for remastering old OpenGL games using 
 
 This is done by replacing the Window's opengl.dll in the host app’s .exe location, which causes the host app’s OpenGL API calls to be intercepted by the glRemix shim layer. These OpenGL commands are sent to the glRemix renderer via interprocess communication, where it interprets and executes them, effectively recreating scenes in real-time in DirectX 12.
 
+## Table of Contents
+
+-   [glRemix](#glremix)
+    -   [Overview](#overview)
+    -   [Table of Contents](#table-of-contents)
+    -   [Technical System Details](#technical-system-details)
+    -   [Features](#features)
+    -   [Building](#building)
+        -   [Additional CMake Configuration Options](#additional-cmake-configuration-options)
+            -   [**`GLREMIX_BUILD_SHIM_X64` and `GLREMIX_BUILD_SHIM_WIN32`:**](#glremix_build_shim_x64-and-glremix_build_shim_win32)
+            -   [**`GLREMIX_DEPLOY_DIR`:**](#glremix_deploy_dir)
+            -   [**`GLREMIX_OVERRIDE_RENDERER_PATH` and `GLREMIX_CUSTOM_RENDERER_EXE_PATH`:**](#glremix_override_renderer_path-and-glremix_custom_renderer_exe_path)
+    -   [Minimum Requirements](#minimum-requirements)
+    -   [Dependencies](#dependencies)
+    -   [Development Progress](#development-progress)
+
+## Technical System Details
+
+Please refer to the [System Details](docs/system-details.md) document for more technical information.
+
 ## Features
 
 <img src="docs/assets/splash.png">
@@ -101,10 +121,6 @@ This will override the path that the shim looks for when launching the DX12 rend
 -   [fastgltf](https://github.com/spnda/fastgltf) - MIT License
 -   [Dear ImGui](https://github.com/ocornut/imgui) - MIT License
 -   [SXC](https://github.com/AaronTian-stack/QhenkiX/tree/main/SXC) - MIT License
-
-## Technical System Details
-
-Please refer to the [System Details](docs/system-details.md) document for more technical information.
 
 ## Development Progress
 
