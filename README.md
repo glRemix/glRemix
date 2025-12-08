@@ -2,12 +2,20 @@
 
 <table style="width:100%; table-layout:fixed; border-collapse:collapse;">
   <tr>
-    <td style="width: 50%;"><img src="docs/assets/hl1.png" alt="glRemix" style="display:block; margin:auto auto;"></td>
-    <td style="width: 50%;"><img src="docs/assets/tron1.png" alt="glRemix" style="display:block; margin:auto auto;"></td>
+    <td style="width:50%;">
+      <img src="docs/assets/hl1.png" style="max-width:100%; height:auto; display:block; margin:auto;">
+    </td>
+    <td style="width:50%;">
+      <img src="docs/assets/tron1.png" style="max-width:100%; height:auto; display:block; margin:auto;">
+    </td>
   </tr>
   <tr>
-    <td style="width: 50%;"><img src="docs/assets/gears.png" alt="glRemix" style="display:block; margin:auto auto;"></td>
-    <td style="width: 50%;"><img src="docs/assets/sgi-ideas.png" alt="glRemix" style="display:block; margin:auto auto;"></td>
+    <td>
+      <img src="docs/assets/gears.png" style="max-width:100%; height:auto; display:block; margin:auto;">
+    </td>
+    <td>
+      <img src="docs/assets/sgi-ideas.png" style="max-width:100%; height:auto; display:block; margin:auto;">
+    </td>
   </tr>
 </table>
 
