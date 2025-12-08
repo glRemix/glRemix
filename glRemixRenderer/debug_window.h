@@ -24,6 +24,7 @@ public:
         size_t num_meshes_rendered;
         size_t num_meshes;
         size_t num_textures;
+        size_t num_materials;
     };
 
     struct DebugInfo

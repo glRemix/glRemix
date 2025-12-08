@@ -90,7 +90,6 @@ class glRemixRenderer : public Application
 
     // Materials per buffer
     // TODO: Make this a macro instead?
-    static constexpr UINT MESHRECORDS_PER_BUFFER = 256;
     static constexpr UINT MATERIALS_PER_BUFFER = 256;
 
     // This is written to by CPU potentially in two consecutive frames so we need to double buffer it
@@ -104,7 +103,7 @@ class glRemixRenderer : public Application
     void create_uav_rt();
 
     // This should only be called from create_pending_buffers
-    void build_mesh_blas_batch(std::vector<size_t> pending_indices, size_t count,
+    void build_mesh_blas_batch(const size_t* pending_indices, size_t count,
                                ID3D12GraphicsCommandList7* cmd_list);
     void create_pending_buffers(ID3D12GraphicsCommandList7* cmd_list);
     bool create_pending_textures(ID3D12GraphicsCommandList7* cmd_list);
@@ -119,8 +118,7 @@ protected:
 private:
     // asset replacement
     bool replace_mesh(UINT64 meshID, const char* new_asset_path);
-    void transform_replacement_vertices(std::vector<Vertex>& gltf_vertices,
-                                        std::array<float, 3> scale_val);
+    void transform_replacement_vertices(std::vector<Vertex>& gltf_vertices, float scale_val);
     void handle_per_frame_replacement();
 
     UINT collect_expired_meshes();

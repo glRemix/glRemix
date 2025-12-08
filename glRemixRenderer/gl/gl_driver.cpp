@@ -4,6 +4,7 @@
 
 #include "gl_command_utils.h"
 #include <shared/gl_utils.h>
+#include "shared/arena.h"
 
 #include <Windows.h>
 LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -775,8 +776,6 @@ static void handle_draw_arrays(const GLCommandContext& ctx, const void* data)
 
     const uint8_t* client_data = reinterpret_cast<const uint8_t*>(cmd + 1);
 
-    thread_local std::vector<float> scratch_buffer;
-
     // Loop over enabled arrays
     for (uint32_t arr = 0; arr < cmd->enabled; arr++)
     {
@@ -785,8 +784,13 @@ static void handle_draw_arrays(const GLCommandContext& ctx, const void* data)
         const size_t component_count = cmd->count * h.size;
         const bool normalize = h.array_type == GLRemixClientArrayType::COLOR;
 
-        scratch_buffer.resize(component_count);
-        float* f_ptr = scratch_buffer.data();
+        float* scratch_buffer = component_count ? get_arena().alloc_array<float>(component_count)
+                                                : nullptr;
+        if (component_count > 0 && !scratch_buffer)
+        {
+            throw std::runtime_error("Arena exhausted");
+        }
+        float* f_ptr = scratch_buffer;
 
         for (size_t v_idx = 0; v_idx < cmd->count; v_idx++)
         {
@@ -839,9 +843,6 @@ static void handle_draw_elements(const GLCommandContext& ctx, const void* data)
 
     const uint8_t* client_data = reinterpret_cast<const uint8_t*>(cmd + 1);
 
-    thread_local std::vector<float> scratch_buffer;
-    thread_local std::vector<size_t> client_indices;
-
     // Loop over enabled arrays
     for (uint32_t arr = 0; arr < cmd->enabled; arr++)
     {
@@ -849,8 +850,15 @@ static void handle_draw_elements(const GLCommandContext& ctx, const void* data)
 
         if (h.array_type == GLRemixClientArrayType::INDICES)
         {
-            client_indices.resize(cmd->count);
-            convert_ptr<size_t>(h.type, cmd->count, client_data, client_indices.data());
+            if (cmd->count > 0)
+            {
+                const auto client_indices = get_arena().alloc_array<size_t>(cmd->count);
+                if (!client_indices)
+                {
+                    throw std::runtime_error("Arena exhausted");
+                }
+                convert_ptr<size_t>(h.type, cmd->count, client_data, client_indices);
+            }
             client_data += h.array_bytes;
             continue;
         }
@@ -858,8 +866,13 @@ static void handle_draw_elements(const GLCommandContext& ctx, const void* data)
         const size_t component_count = cmd->count * h.size;
         const bool normalize = h.array_type == GLRemixClientArrayType::COLOR;
 
-        scratch_buffer.resize(component_count);
-        float* f_ptr = scratch_buffer.data();
+        float* scratch_buffer = component_count ? get_arena().alloc_array<float>(component_count)
+                                                : nullptr;
+        if (component_count > 0 && !scratch_buffer)
+        {
+            throw std::runtime_error("Arena exhausted");
+        }
+        float* f_ptr = scratch_buffer;
 
         for (size_t v_idx = 0; v_idx < cmd->count; v_idx++)
         {
