@@ -6,8 +6,9 @@
 #include <cstdio>
 #include <commdlg.h>
 
-#include <shared/debug_utils.h>
-#include <shared/math_utils.h>
+#include <shared/utils/debug_utils.h>
+#include <shared/utils/string_utils.h>
+#include <shared/arena.h>
 
 #include "debug_log.h"
 
@@ -94,10 +95,11 @@ void glRemix::DebugWindow::destroy()
 
 void DebugWindow::render(const DebugInfo debug_info)
 {
-    ImGui::SetNextWindowPos(ImVec2(mk_initialPosY, mk_initialPosY), ImGuiCond_Once);
+    ImGui::SetNextWindowPos(ImVec2(mk_initialPosX, mk_initialPosY), ImGuiCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(mk_initialSizeX, mk_initialSizeY), ImGuiCond_Once);
 
     bool asset_tab_active = false;
-    if (ImGui::Begin(k_IMGUI_MAIN_WINDOW_ID, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    if (ImGui::Begin(k_IMGUI_MAIN_WINDOW_ID, nullptr, 0))
     {
         if (ImGui::BeginTabBar("DebugTabs"))
         {
@@ -185,16 +187,15 @@ void DebugWindow::render_mesh_ids(const MeshRecord* records, const size_t count)
  * @param out_encoded_path: Win32 functions use UTF-16
  * @return
  */
-static bool s_open_file_dialog_native_win32(const HWND& local_hwnd,
-                                            std::array<WCHAR, 256>* out_encoded_path)
+static bool s_open_file_dialog_native_win32(const HWND& local_hwnd, WCHAR* out_encoded_path)
 {
     OPENFILENAMEW ofn{};
     ofn.lStructSize = sizeof(ofn);
     ofn.lpstrTitle = k_WIN32_FILE_DIALOG_WINDOW_TITLE;
     ofn.hwndOwner = local_hwnd;
     ofn.lpstrFilter = L"GLTF Files\0*.gltf;*.glb\0";
-    ofn.lpstrFile = static_cast<LPTSTR>(out_encoded_path->data());
-    ofn.nMaxFile = static_cast<DWORD>(out_encoded_path->size());
+    ofn.lpstrFile = out_encoded_path;
+    ofn.nMaxFile = MAX_PATH;
     ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
 
     return GetOpenFileNameW(&ofn);
@@ -236,18 +237,21 @@ void DebugWindow::render_mesh_options_window(tsl::robin_map<UINT64, MeshRecord>*
             {
                 if (!m_dialog_open.exchange(true))
                 {
-                    static std::array<WCHAR, 256> encoded_path = {};
-                    utf8_to_wide(m_asset_path.data(), encoded_path.data(), encoded_path.size());
+                    auto& arena = get_arena();
 
-                    auto handle_file_dialog_threading_fn = [this]()
+                    WCHAR* encoded_path = arena.alloc_array<WCHAR>(MAX_PATH);
+                    utf8_to_wide(m_asset_path.data(), encoded_path, MAX_PATH);
+
+                    // capture ptr by value
+                    auto handle_file_dialog_threading_fn = [this, encoded_path]()
                     {
                         HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
                         if (SUCCEEDED(hr))
                         {
-                            if (s_open_file_dialog_native_win32(this->m_hwnd, &encoded_path))
+                            if (s_open_file_dialog_native_win32(this->m_hwnd, encoded_path))
                             {
-                                wide_to_utf8(encoded_path.data(), this->m_asset_path.data(),
+                                wide_to_utf8(encoded_path, this->m_asset_path.data(),
                                              this->m_asset_path.size());
                             }
                             this->m_dialog_open.store(false);

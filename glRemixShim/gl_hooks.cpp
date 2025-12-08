@@ -3,7 +3,7 @@
 #include <tsl/robin_map.h>
 #include <mutex>
 
-#include <shared/gl_utils.h>
+#include <shared/utils/gl_utils.h>
 
 #include "gl_loader.h"
 

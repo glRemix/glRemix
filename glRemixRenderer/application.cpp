@@ -2,7 +2,7 @@
 
 #include <system_error>
 
-#include <shared/debug_utils.h>
+#include <shared/utils/debug_utils.h>
 
 using namespace glRemix;
 

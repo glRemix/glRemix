@@ -112,7 +112,7 @@ StyleCopReport.xml
 *.ilk
 *.meta
 *.iobj
-# *.pdb
+*.pdb
 *.ipdb
 *.pgc
 *.pgd

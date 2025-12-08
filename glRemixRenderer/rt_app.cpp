@@ -10,8 +10,8 @@
 #include <fastgltf/core.hpp>
 #include <fastgltf/tools.hpp>
 
-#include <shared/math_utils.h>
-#include <shared/debug_utils.h>
+#include <shared/utils/math_utils.h>
+#include <shared/utils/debug_utils.h>
 
 #include "dx/d3d12_barrier.h"
 

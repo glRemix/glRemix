@@ -1,7 +1,7 @@
 #include "descriptor_pager.h"
 
 #include <cassert>
-#include <shared/math_utils.h>
+#include <shared/utils/math_utils.h>
 
 UINT glRemix::dx::DescriptorPager::calculate_global_offset(const PageType type,
                                                            const UINT page_index) const

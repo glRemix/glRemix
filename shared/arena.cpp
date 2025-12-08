@@ -1,5 +1,5 @@
 #include "arena.h"
-#include "shared/math_utils.h"
+#include "shared/utils/math_utils.h"
 
 using namespace glRemix;
 

@@ -15,11 +15,12 @@ set(GLREMIX_SHARED_HEADER_NAMES
     "gl_commands.h"
     "ipc_protocol.h"
     "ipc_protocol.inl"
-    "gl_utils.h"
-    "math_utils.h"
-    "debug_utils.h"
-    "${containers}/free_list_vector.h"
     "arena.h"
+    "utils/gl_utils.h"
+    "utils/math_utils.h"
+    "utils/debug_utils.h"
+    "utils/string_utils.h"
+    "${containers}/free_list_vector.h"
 )
 
 set(GLREMIX_SHARED_SOURCE_NAMES

@@ -1,6 +1,6 @@
 #include "ipc_protocol.h"
 
-#include "debug_utils.h"
+#include "utils/debug_utils.h"
 
 #include <thread>
 #include <chrono>

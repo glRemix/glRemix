@@ -1,6 +1,6 @@
 #include "override_modules/common_includes.h"
 
-#include <shared/debug_utils.h>
+#include <shared/utils/debug_utils.h>
 
 #include "gl_loader.h"
 

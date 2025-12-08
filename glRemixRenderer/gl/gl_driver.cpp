@@ -3,7 +3,7 @@
 #include <DirectXTex.h>
 
 #include "gl_command_utils.h"
-#include <shared/gl_utils.h>
+#include <shared/utils/gl_utils.h>
 #include "shared/arena.h"
 
 #include <Windows.h>

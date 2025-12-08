@@ -44,7 +44,7 @@ private:
     float m_fps = 0.0f;
 
     UINT64 m_mesh_ID_to_replace = ~0ull;
-    std::array<CHAR, 256> m_asset_path{};
+    std::array<CHAR, MAX_PATH> m_asset_path{};
     std::function<bool(UINT64 mesh_id, const CHAR* asset_path)>
         m_replace_mesh_callback;  // replace_mesh function from rt_app
 
@@ -55,8 +55,10 @@ private:
     std::atomic<bool> m_dialog_open{ false };  // prevents multiple dialogs
     std::thread m_dialog_thread;
 
-    const UINT32 mk_initialPoxX = 0;
+    const UINT32 mk_initialPosX = 0;
     const UINT32 mk_initialPosY = 0;
+    const UINT32 mk_initialSizeX = 400;
+    const UINT32 mk_initialSizeY = 400;
 
     void render_performance_stats();
     void render_settings();

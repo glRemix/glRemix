@@ -4,7 +4,7 @@
 #include <string>
 #include <tsl/robin_map.h>
 
-#include <shared/debug_utils.h>
+#include <shared/utils/debug_utils.h>
 
 namespace glRemix
 {
