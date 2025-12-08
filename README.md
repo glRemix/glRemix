@@ -1,22 +1,32 @@
 # glRemix
 
 
-<img src="docs/assets/hl1.png" alt="glRemix" width="45%">
-<img src="docs/assets/tron1.png" alt="glRemix" width="45%">
-<img src="docs/assets/gears.png" alt="glRemix" width="45%">
-<img src="docs/assets/sgi-ideas.png" alt="glRemix" width="45%">
+<table style="width:100%; table-layout:fixed; border-collapse:collapse;">
+  <tr>
+    <td><img src="docs/assets/hl1.png" alt="glRemix" style="width:100%; height:220px; object-fit:cover;"></td>
+    <td><img src="docs/assets/tron1.png" alt="glRemix" style="width:100%; height:220px; object-fit:cover;"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/gears.png" alt="glRemix" style="width:100%; height:220px; object-fit:cover;"></td>
+    <td><img src="docs/assets/sgi-ideas.png" alt="glRemix" style="width:100%; height:220px; object-fit:cover;"></td>
+  </tr>
+</table>
 
 
-<p align="center">
- <img src="docs/assets/desert1.png" alt="Original" width="45%">
- <img src="docs/assets/desert2.png" alt="glRemix" width="45%">
-</p>
-
-
-<p align="center">
- <img src="docs/assets/server1.png" alt="Original" width="45%">
- <img src="docs/assets/server2.png" alt="glRemix" width="45%">
-</p>
+<table style="width:100%; table-layout:fixed; border-collapse:collapse;">
+  <tr>
+    <th style="text-align:center;">Original</th>
+    <th style="text-align:center;">glRemix</th>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/desert1.png" alt="Original" style="width:100%;"></td>
+    <td><img src="docs/assets/desert2.png" alt="glRemix" style="width:100%;"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/server1.png" alt="Original" style="width:100%;"></td>
+    <td><img src="docs/assets/server2.png" alt="glRemix" style="width:100%;"></td>
+  </tr>
+</table>
 
 
 ## Overview
