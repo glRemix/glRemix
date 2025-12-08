@@ -1,23 +1,9 @@
 # glRemix
 
-<table style="width:100%; table-layout:fixed; border-collapse:collapse;">
-  <tr>
-    <td style="width:50%;">
-      <img src="docs/assets/hl1.png" style="max-width:100%; height:auto; display:block; margin:auto;">
-    </td>
-    <td style="width:50%;">
-      <img src="docs/assets/tron1.png" style="max-width:100%; height:auto; display:block; margin:auto;">
-    </td>
-  </tr>
-  <tr>
-    <td>
-      <img src="docs/assets/gears.png" style="max-width:100%; height:auto; display:block; margin:auto;">
-    </td>
-    <td>
-      <img src="docs/assets/sgi-ideas.png" style="max-width:100%; height:auto; display:block; margin:auto;">
-    </td>
-  </tr>
-</table>
+| | |
+|---|---|
+| <img src="docs/assets/hl1.png" width="300"/> | <img src="docs/assets/tron1.png" width="300"/> |
+| <img src="docs/assets/gears.png" width="300"/> | <img src="docs/assets/sgi-ideas.png" width="300"/> |
 
 <table style="width:100%; table-layout:fixed; border-collapse:collapse;">
   <tr>
