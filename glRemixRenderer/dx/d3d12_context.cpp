@@ -6,6 +6,7 @@
 #include <DirectXTex.h>
 
 #include <shared/math_utils.h>
+#include <shared/debug_utils.h>
 
 #include "application.h"
 #include "shared/arena.h"
