@@ -1,20 +1,21 @@
 # glRemix
 
 
-<img src="assets/hl1.png">
-<img src="assets/tron1.png">
-<img src="assets/gears.png">
+<img src="docs/assets/hl1.png" alt="glRemix" width="45%">
+<img src="docs/assets/tron1.png" alt="glRemix" width="45%">
+<img src="docs/assets/gears.png" alt="glRemix" width="45%">
+<img src="docs/assets/sgi-ideas.png" alt="glRemix" width="45%">
 
 
 <p align="center">
- <img src="assets/desert1.png" alt="Original" width="45%">
- <img src="assets/desert2.png" alt="glRemix" width="45%">
+ <img src="docs/assets/desert1.png" alt="Original" width="45%">
+ <img src="docs/assets/desert2.png" alt="glRemix" width="45%">
 </p>
 
 
 <p align="center">
- <img src="assets/server1.png" alt="Original" width="45%">
- <img src="assets/server2.png" alt="glRemix" width="45%">
+ <img src="docs/assets/server1.png" alt="Original" width="45%">
+ <img src="docs/assets/server2.png" alt="glRemix" width="45%">
 </p>
 
 
@@ -26,7 +27,7 @@ This is done by replacing the Window's opengl.dll in the host app’s .exe locat
 
 
 ## Features
-<img src="assets/splash.png">
+<img src="docs/assets/splash.png">
 
 
 The application and path-traced DXR renderer comes equipped with the following rendering features:
