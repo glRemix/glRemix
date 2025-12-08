@@ -13,3 +13,5 @@
 *.vcxproj.filters text eol=lf
 *.sln text eol=lf
 *.props text eol=lf
+
+external/** linguist-vendored
