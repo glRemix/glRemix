@@ -54,6 +54,7 @@ function(glremix_add_shim_builder platform description)
         CMAKE_GENERATOR "${CMAKE_GENERATOR}"
         CMAKE_GENERATOR_PLATFORM "${platform}"
         CMAKE_ARGS
+        -DPython3_EXECUTABLE=${Python3_EXECUTABLE}
         -DCMAKE_CXX_STANDARD=20
         -DCMAKE_CXX_STANDARD_REQUIRED=ON
         -DREPO_ROOT=${REPO_ROOT}
