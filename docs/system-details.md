@@ -1,5 +1,26 @@
 # glRemix
 
+## Table of Contents
+
+-   [glRemix](#glremix)
+    -   [Table of Contents](#table-of-contents)
+    -   [Shim Layer](#shim-layer)
+    -   [Driver](#driver)
+        -   [The glState Object](#the-glstate-object)
+        -   [Geometry Handling](#geometry-handling)
+        -   [Texture Handling](#texture-handling)
+    -   [Renderer](#renderer)
+    -   [Asset Replacement](#asset-replacement)
+    -   [ImGui](#imgui)
+        -   [Performance](#performance)
+        -   [Render Settings](#render-settings)
+        -   [Asset List](#asset-list)
+        -   [Debug Log](#debug-log)
+    -   [Development Progress](#development-progress)
+    -   [Developer Tools](#developer-tools)
+        -   [`format.ps1`](#formatps1)
+    -   [Performance Snapshot](#performance-snapshot)
+
 ## Shim Layer
 
 The `shim layer` intercepts OpenGL commands from the host application and writes them to a shared memory buffer via Windows interprocess communication.
