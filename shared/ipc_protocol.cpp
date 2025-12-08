@@ -39,7 +39,7 @@ void glRemix::IPCProtocol::start_frame_or_wait()
         }
 
         HANDLE tmp_events[3] = { oldest->smem.get_read_event(), latest->smem.get_read_event(),
-                                 this->m_reader_shutdown_event_handle };
+                                 this->m_writer_shutdown_event_handle };
 
         DWORD dw_wait_result = WaitForMultipleObjects(3, tmp_events, false, INFINITE);
 
@@ -146,7 +146,7 @@ void glRemix::IPCProtocol::consume_frame_or_wait(void* payload, UINT32* frame_in
         }
 
         HANDLE tmp_events[3] = { oldest->smem.get_write_event(), latest->smem.get_write_event(),
-                                 this->m_writer_shutdown_event_handle };
+                                 this->m_reader_shutdown_event_handle };
 
         DWORD dw_wait_result = WaitForMultipleObjects(3, tmp_events, false, INFINITE);
 
@@ -197,16 +197,6 @@ void glRemix::IPCProtocol::write_simple(const void* ptr, SIZE_T bytes)
 
 bool glRemix::IPCProtocol::has_writer_shutdown() const
 {
-    if (!m_writer_shutdown_event_handle)
-    {
-        return false;
-    }
-
-    return WaitForSingleObject(m_writer_shutdown_event_handle, 0) == WAIT_OBJECT_0;
-}
-
-bool glRemix::IPCProtocol::has_reader_shutdown() const
-{
     if (!m_reader_shutdown_event_handle)
     {
         return false;
@@ -215,18 +205,28 @@ bool glRemix::IPCProtocol::has_reader_shutdown() const
     return WaitForSingleObject(m_reader_shutdown_event_handle, 0) == WAIT_OBJECT_0;
 }
 
+bool glRemix::IPCProtocol::has_reader_shutdown() const
+{
+    if (!m_writer_shutdown_event_handle)
+    {
+        return false;
+    }
+
+    return WaitForSingleObject(m_writer_shutdown_event_handle, 0) == WAIT_OBJECT_0;
+}
+
 void glRemix::IPCProtocol::shutdown_writer()
 {
-    if (m_writer_shutdown_event_handle)
+    if (m_reader_shutdown_event_handle)
     {
-        SetEvent(m_writer_shutdown_event_handle);
+        SetEvent(m_reader_shutdown_event_handle);
     }
 }
 
 void glRemix::IPCProtocol::shutdown_reader()
 {
-    if (m_reader_shutdown_event_handle)
+    if (m_writer_shutdown_event_handle)
     {
-        SetEvent(m_reader_shutdown_event_handle);
+        SetEvent(m_writer_shutdown_event_handle);
     }
 }
