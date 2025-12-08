@@ -1,13 +1,10 @@
 #pragma once
-#include <stdexcept>
 #include <windows.h>
+
+#include "debug_window.h"
 
 #include "dx/d3d12_context.h"
 #include "dx/d3d12_descriptor_heap.h"
-
-// clang-format off
-#define THROW_IF_FALSE(cond) do { if (!(cond)) throw std::runtime_error(#cond " failed"); } while (0)
-// clang-format on
 
 namespace glRemix
 {

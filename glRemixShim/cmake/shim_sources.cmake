@@ -1,13 +1,13 @@
 # Building Visual Studio file lists requires the top level CMakeLists.txt to know every shim source, so declare them in a shared helper here.
 
 set(GL_XML_REGISTRY "${CMAKE_CURRENT_SOURCE_DIR}/gl.xml")
-set(GL_GENERATED_DIR "${GLREMIX_EXTERNAL_BINARY_DIR}/includes/generated")
-set(GL_GENERATED_WRAPPERS "${GL_GENERATED_DIR}/gl_wrappers.inl")
-set(GL_GENERATED_ALIASES "${GL_GENERATED_DIR}/gl_export_aliases.inl")
-set(GL_GENERATED_REGISTER "${GL_GENERATED_DIR}/gl_register.inl")
-set(WGL_GENERATED_WRAPPERS "${GL_GENERATED_DIR}/wgl_wrappers.inl")
+set(GLREMIX_GL_GENERATED_DIR "${GLREMIX_EXTERNAL_BINARY_DIR}/includes/generated")
+set(GL_GENERATED_WRAPPERS "${GLREMIX_GL_GENERATED_DIR}/gl_wrappers.inl")
+set(GL_GENERATED_ALIASES "${GLREMIX_GL_GENERATED_DIR}/gl_export_aliases.inl")
+set(GL_GENERATED_REGISTER "${GLREMIX_GL_GENERATED_DIR}/gl_register.inl")
+set(WGL_GENERATED_WRAPPERS "${GLREMIX_GL_GENERATED_DIR}/wgl_wrappers.inl")
 
-set(GLEXT_GENERATED_ENUMS "${GL_GENERATED_DIR}/glext_enums.inl")
+set(GLEXT_GENERATED_ENUMS "${GLREMIX_GL_GENERATED_DIR}/glext_enums.inl")
 
 set(GLREMIX_SHIM_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/..")
 set(GLREMIX_SHARED_DIR "${GLREMIX_SHIM_SOURCE_DIR}/../shared")

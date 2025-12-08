@@ -37,7 +37,7 @@ void report_missing_function(const char* name);
 
 /**
  * @brief
- * @return Will still return true if shutdown did not occur.
+ * @return Will return false if shutdown did not occur.
  * i.e. it is still the first frame.
  */
 bool shutdown();

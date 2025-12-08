@@ -4,11 +4,11 @@
 #include <string>
 #include <tsl/robin_map.h>
 
-#include <shared/debug_utils.h>
+#include <shared/utils/debug_utils.h>
 
 namespace glRemix
 {
-glRemix::IPCProtocol g_ipc;
+glRemix::IPCProtocol g_ipc{};
 
 std::once_flag g_renderer_flag;
 HANDLE g_renderer_process = nullptr;
@@ -183,7 +183,7 @@ bool shutdown()
     {
         // prevent shutdown during first frame
         DBG_PRINT("GLRemixLoader - Renderer not launched yet. Shutdown will not occur.");
-        return true;  // will not propogate to `wglDeleteContext`
+        return false;
     }
     if (glRemix::g_renderer_process)
     {
@@ -194,18 +194,20 @@ bool shutdown()
         DBG_PRINT("GLRemixLoader - Renderer termination cached_success.");
     }
 
-    // TODO: implement IPCProtocol::shutdown()
     // TODO: implement global disabled state that affects `find_hook` and `export_macros.h`
     {
         std::scoped_lock lock(g_hook_mutex);
         g_hooks.clear();
     }
 
+    g_ipc.shutdown_writer();
+
 #if 1
     // TODO: add some other custom goodbye? or remove
     MessageBoxTimeoutW(nullptr, L"Thanks for using glRemix!", L"glRemixShim",
                        MB_OK | MB_ICONINFORMATION, 0, 5000);
 #endif
+
     return true;
 }
 

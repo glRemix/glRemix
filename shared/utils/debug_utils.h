@@ -3,6 +3,7 @@
 #include <debugapi.h>
 #include <winbase.h>
 #include <winuser.h>
+#include <stdexcept>
 
 #define DBG_PRINT(fmt, ...)                                                                        \
     do                                                                                             \
@@ -23,3 +24,10 @@ extern "C" WINUSERAPI int WINAPI MessageBoxTimeoutW(IN HWND hWnd, IN PCWSTR lpTe
 #else
 #define HANDLE_LOGIC_ERROR(msg) DBG_PRINT("%s", msg)
 #endif
+
+#define THROW_IF_FALSE(cond)                                                                       \
+    do                                                                                             \
+    {                                                                                              \
+        if (!(cond))                                                                               \
+            throw std::runtime_error(#cond " failed");                                             \
+    } while (0)

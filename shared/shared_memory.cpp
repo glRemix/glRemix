@@ -1,6 +1,6 @@
 #include "shared_memory.h"
 
-#include "debug_utils.h"
+#include "utils/debug_utils.h"
 
 glRemix::SharedMemory::~SharedMemory()
 {

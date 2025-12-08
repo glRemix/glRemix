@@ -1,16 +1,105 @@
 #include "debug_window.h"
 
-#include <utility>
 #include <imgui.h>
+#include <imgui_impl_win32.h>
 #include <imgui_internal.h>
-#include "debug_log.h"
 #include <cstdio>
+#include <commdlg.h>
+
+#include <shared/utils/debug_utils.h>
+#include <shared/utils/string_utils.h>
+#include <shared/arena.h>
+
+#include "debug_log.h"
 
 using namespace glRemix;
 
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandlerEx(HWND hWnd, UINT msg, WPARAM wParam,
+                                                               LPARAM lParam, ImGuiIO& io);
+
+LRESULT CALLBACK s_local_window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    switch (msg)
+    {
+        default: break;  // TODO: case on msg for custom input handling
+    }
+
+    if (ImGui::GetCurrentContext() != nullptr)
+    {
+        // forward to ImGui
+        static ImGuiIO& io = ImGui::GetIO();
+
+        if (ImGui_ImplWin32_WndProcHandlerEx(hwnd, msg, wParam, lParam, io))
+        {
+            return 1;
+        }
+    }
+
+    // it is required to default handle all callbacks that have reached this point
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+void DebugWindow::init_imgui_frontends()
+{
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+
+    ImGui::StyleColorsDark();
+
+    HINSTANCE hInstance = GetModuleHandle(nullptr);
+
+    WNDCLASSEXW wc = {};
+
+    wc.lpfnWndProc = s_local_window_proc;
+    wc.hInstance = hInstance;
+    wc.lpszClassName = k_LOCAL_WINDOW_CLASS_DEFAULT_NAME;
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.cbSize = sizeof(WNDCLASSEXW);
+
+    THROW_IF_FALSE(RegisterClassExW(&wc));  // register the class
+
+    m_hwnd = CreateWindowEx(0, k_LOCAL_WINDOW_CLASS_DEFAULT_NAME, k_LOCAL_WINDOW_DEFAULT_TEXT,
+                            WS_POPUP, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+                            nullptr, nullptr, hInstance, nullptr);
+
+    THROW_IF_FALSE(m_hwnd);
+
+    THROW_IF_FALSE(ImGui_ImplWin32_Init(m_hwnd));
+
+    ImGuiViewport* main_vp = ImGui::GetMainViewport();
+    main_vp->PlatformHandle = (void*)m_hwnd;
+    main_vp->PlatformHandleRaw = (void*)m_hwnd;
+}
+
+void glRemix::DebugWindow::destroy()
+{
+    if (m_hwnd)
+    {
+        DestroyWindow(m_hwnd);
+        m_hwnd = nullptr;
+    }
+    UnregisterClassW(k_LOCAL_WINDOW_CLASS_DEFAULT_NAME, GetModuleHandle(nullptr));
+
+    if (m_dialog_thread.joinable())
+    {
+        // HANDLE_LOGIC_ERROR("glRemixRenderer - Dialog thread has not terminated properly.");
+        // TODO: consistent shutdown of dialog thread.
+        m_dialog_thread.join();
+    }
+}
+
 void DebugWindow::render(const DebugInfo debug_info)
 {
-    if (ImGui::Begin("glRemix", nullptr, 0))
+    ImGui::SetNextWindowPos(ImVec2(mk_initialPosX, mk_initialPosY), ImGuiCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(mk_initialSizeX, mk_initialSizeY), ImGuiCond_Once);
+
+    bool asset_tab_active = false;
+    if (ImGui::Begin(k_IMGUI_MAIN_WINDOW_ID, nullptr, 0))
     {
         if (ImGui::BeginTabBar("DebugTabs"))
         {
@@ -26,6 +115,7 @@ void DebugWindow::render(const DebugInfo debug_info)
             }
             if (ImGui::BeginTabItem("Asset List"))
             {
+                asset_tab_active = true;
                 const auto& mesh_records = debug_info.mesh_records;
                 render_mesh_ids(mesh_records.records, mesh_records.count);
                 ImGui::EndTabItem();
@@ -38,13 +128,18 @@ void DebugWindow::render(const DebugInfo debug_info)
             ImGui::EndTabBar();
         }
     }
-    render_mesh_options_window(debug_info.m_mesh_map);
+
+    if (m_is_mesh_options_window_active &= asset_tab_active; m_is_mesh_options_window_active)
+    {
+        render_mesh_options_window(debug_info.m_mesh_map);
+    }
+
     ImGui::End();
 }
 
 // get replace_mesh function from rt_app
 void DebugWindow::set_replace_mesh_callback(
-    std::function<void(UINT64 mesh_id, const char* asset_path)> callback)
+    std::function<bool(UINT64 mesh_id, const CHAR* asset_path)> callback)
 {
     m_replace_mesh_callback = callback;
 }
@@ -69,77 +164,131 @@ void DebugWindow::render_mesh_ids(const MeshRecord* records, const size_t count)
             char buf[64];
             snprintf(buf, 64, "Asset ID: %llu", mesh_id);
 
-            if (ImGui::Selectable(buf, is_selected))
-            {
-                m_mesh_ID_to_replace = mesh_id;
-            }
-
             // for mesh options window
             if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
             {
-                m_selected_mesh_for_window = mesh_id;
+                m_is_mesh_options_window_active = true;
+                m_mesh_ID_to_replace = mesh_id;
+                m_show_mesh_replacement_error_message = false;  // reset error status
+            }
+            else if (ImGui::Selectable(buf, is_selected))
+            {
+                m_mesh_ID_to_replace = mesh_id;
+                m_show_mesh_replacement_error_message = false;  // reset error status
             }
         }
         ImGui::EndListBox();
     }
 }
 
+/**
+ * @brief
+ * @param local_hwnd
+ * @param out_encoded_path: Win32 functions use UTF-16
+ * @return
+ */
+static bool s_open_file_dialog_native_win32(const HWND& local_hwnd, WCHAR* out_encoded_path)
+{
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.lpstrTitle = k_WIN32_FILE_DIALOG_WINDOW_TITLE;
+    ofn.hwndOwner = local_hwnd;
+    ofn.lpstrFilter = L"GLTF Files\0*.gltf;*.glb\0";
+    ofn.lpstrFile = out_encoded_path;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+    return GetOpenFileNameW(&ofn);
+}
+
 void DebugWindow::render_mesh_options_window(tsl::robin_map<UINT64, MeshRecord>* m_mesh_map)
 {
-    if (m_selected_mesh_for_window == ~0ull)
-    {
-        return;
-    }
-
     // check if mesh still exists in map
-    if (!m_mesh_map->contains(m_selected_mesh_for_window))
+    if (!m_mesh_map->contains(m_mesh_ID_to_replace))
     {
-        m_selected_mesh_for_window = ~0ull;
+        m_is_mesh_options_window_active = false;
+        m_mesh_ID_to_replace = ~0ull;
         return;
     }
 
-    char title[64];
-    snprintf(title, sizeof(title), "Asset Options: %llu", m_selected_mesh_for_window);
+    ImGui::Dummy(ImVec2(0.0f, 8.0));
 
-    // find position of main window
-    ImGuiWindow* main_imgui = ImGui::FindWindowByName("glRemix");
-    if (main_imgui)
+    if (ImGui::BeginChild(k_IMGUI_ASSET_OPTIONS_WINDOW_ID, ImVec2(0, 0),
+                          ImGuiChildFlags_FrameStyle | ImGuiChildFlags_AutoResizeY))
     {
-        ImVec2 pos = main_imgui->Pos;
-        ImVec2 size = main_imgui->Size;
-        ImVec2 new_pos(pos.x + size.x + 10.0f, pos.y);
+        static CHAR identifier[96];
+        snprintf(identifier, sizeof(identifier), "Asset Options: %llu", m_mesh_ID_to_replace);
 
-        ImGui::SetNextWindowPos(new_pos, ImGuiCond_Always);
-    }
-
-    bool is_open = true;
-    if (ImGui::Begin(title, &is_open, ImGuiWindowFlags_AlwaysAutoResize))
-    {
-        auto& mesh = m_mesh_map->at(m_selected_mesh_for_window);
-
-        // visibility toggle option
-        ImGui::Checkbox("Visible", &mesh.visible);
-
-        ImGui::Separator();
-
-        ImGui::Text("Asset Replacement - Path to New GLTF File:");
-        ImGui::InputText("##ReplacementPath", m_asset_path.data(), sizeof(m_asset_path));
-
-        if (ImGui::Button("Replace Asset"))
+        if (ImGui::CollapsingHeader(identifier, &m_is_mesh_options_window_active,
+                                    ImGuiTreeNodeFlags_DefaultOpen))
         {
-            if (m_replace_mesh_callback)
+            auto& mesh = m_mesh_map->at(m_mesh_ID_to_replace);
+
+            // visibility toggle option
+            ImGui::Checkbox("Toggle Visibility", &mesh.visible);
+
+            ImGui::Separator();
+
+            ImGui::TextUnformatted("Asset Replacement - Path to New GLTF File:");
+            ImGui::InputText("##ReplacementPath", m_asset_path.data(), sizeof(m_asset_path));
+
+            ImGui::SameLine();
+            if (ImGui::Button("Browse"))
             {
-                m_replace_mesh_callback(m_selected_mesh_for_window, m_asset_path.data());
+                if (!m_dialog_open.exchange(true))
+                {
+                    auto& arena = get_arena();
+
+                    WCHAR* encoded_path = arena.alloc_array<WCHAR>(MAX_PATH);
+                    utf8_to_wide(m_asset_path.data(), encoded_path, MAX_PATH);
+
+                    // capture ptr by value
+                    auto handle_file_dialog_threading_fn = [this, encoded_path]()
+                    {
+                        HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+
+                        if (SUCCEEDED(hr))
+                        {
+                            if (s_open_file_dialog_native_win32(this->m_hwnd, encoded_path))
+                            {
+                                wide_to_utf8(encoded_path, this->m_asset_path.data(),
+                                             this->m_asset_path.size());
+                            }
+                            this->m_dialog_open.store(false);
+                        }
+
+                        CoUninitialize();
+                    };
+
+                    if (m_dialog_thread.joinable())
+                    {
+                        m_dialog_thread.join();
+                    }
+                    m_dialog_thread = std::thread(handle_file_dialog_threading_fn);
+                }
+            }
+
+            if (ImGui::Button("Replace Asset"))
+            {
+                if (m_replace_mesh_callback)
+                {
+                    m_show_mesh_replacement_error_message
+                        = !m_replace_mesh_callback(m_mesh_ID_to_replace, m_asset_path.data());
+                }
+            }
+
+            static constexpr CHAR k_MESH_REPLACEMENT_FAILED_TEXT[]
+                = "Entered path is not a valid GLTF or GLB file.\0";
+            static constexpr ImVec4 k_MESH_REPLACEMENT_FAILED_TEXT_COLOR(1.0f, 0.0f, 0.0f, 1.0f);
+            if (m_show_mesh_replacement_error_message)
+            {
+                ImGui::PushStyleColor(ImGuiCol_Text, k_MESH_REPLACEMENT_FAILED_TEXT_COLOR);
+                ImGui::TextUnformatted(k_MESH_REPLACEMENT_FAILED_TEXT);
+                ImGui::PopStyleColor();
             }
         }
     }
-
-    ImGui::End();
-
-    if (!is_open)
-    {
-        m_selected_mesh_for_window = ~0ull;
-    }
+    ImGui::EndChild();
 }
 
 void DebugWindow::render_performance_stats()
@@ -235,7 +384,8 @@ void DebugWindow::render_debug_log()
     ImGui::Checkbox("Auto-scroll", &auto_scroll);
     ImGui::Separator();
 
-    ImGui::BeginChild("##DebugLogChild", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
+    ImGui::BeginChild("##DebugLogChild", ImVec2(0, ImGui::GetTextLineHeight() * 20.0f),
+                      ImGuiChildFlags_FrameStyle, ImGuiWindowFlags_HorizontalScrollbar);
 
     const auto cur = dbglog_current_seq();
     const auto& log = get_debug_log();

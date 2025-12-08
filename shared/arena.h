@@ -3,7 +3,7 @@
 #include <basetsd.h>
 #include <memory>
 
-#include "math_utils.h"
+#include "utils/math_utils.h"
 
 namespace glRemix
 {

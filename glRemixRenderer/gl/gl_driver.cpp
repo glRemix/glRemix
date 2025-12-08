@@ -3,7 +3,7 @@
 #include <DirectXTex.h>
 
 #include "gl_command_utils.h"
-#include <shared/gl_utils.h>
+#include <shared/utils/gl_utils.h>
 #include "shared/arena.h"
 
 #include <Windows.h>
@@ -1191,16 +1191,16 @@ static void handle_disable(const GLCommandContext& ctx, const void* data)
 static void handle_wgl_create_context(const GLCommandContext& ctx, const void* data)
 {
     const auto cmd = static_cast<const GLRemixSendHWNDCommand*>(data);
-    ctx.state.hwnd = cmd->hwnd;
+    ctx.state.m_host_hwnd = cmd->hwnd;
     ctx.state.m_create_context = true;
 }
 
 static void handle_wgl_input_event(const GLCommandContext& ctx, const void* data)
 {
     const auto* cmd = static_cast<const WGLInputEventCommand*>(data);
-    if (ctx.state.hwnd)
+    if (ctx.state.m_host_hwnd)
     {
-        ImGui_ImplWin32_WndProcHandler(ctx.state.hwnd, cmd->msg, cmd->wparam,
+        ImGui_ImplWin32_WndProcHandler(ctx.state.m_local_hwnd, cmd->msg, cmd->wparam,
                                        static_cast<LPARAM>(cmd->lparam));
     }
 }
@@ -1321,13 +1321,11 @@ void glRemix::glDriver::init_handlers()
     gl_command_handlers[static_cast<size_t>(WGLCMD_INPUT_EVENT)] = &handle_wgl_input_event;
 }
 
-glRemix::glDriver::glDriver()
+void glRemix::glDriver::init(const HWND local_hwnd)
 {
-    init();
-}
+    m_command_buffer.reserve(k_MAX_IPC_PAYLOAD);
+    m_state = std::make_unique<glState>(local_hwnd);
 
-void glRemix::glDriver::init()
-{
     m_ipc.init_reader();
 
     init_handlers();
@@ -1344,22 +1342,22 @@ void glRemix::glDriver::process_stream()
         return;
     }
 
-    m_state.m_current_frame = frame_index;
+    m_state->m_current_frame = frame_index;
 
-    if (!m_state.m_swapchain_creation_deferred)
+    if (!m_state->m_swapchain_creation_deferred)
     {
         // reset per frames
-        m_state.m_create_context = false;
-        m_state.m_meshes.clear();              // per frame meshes
-        m_state.m_matrix_pool.clear();         // reset matrix pool each frame
-        m_state.m_materials.clear();
-        m_state.m_pending_geometries.clear();  // clear pending geometry data
-        m_state.m_pending_textures.clear();
+        m_state->m_create_context = false;
+        m_state->m_meshes.clear();              // per frame meshes
+        m_state->m_matrix_pool.clear();         // reset matrix pool each frame
+        m_state->m_materials.clear();
+        m_state->m_pending_geometries.clear();  // clear pending geometry data
+        m_state->m_pending_textures.clear();
     }
 
-    m_state.m_offset = 0;
-    GLCommandContext ctx{ m_state, *this };
-    read_buffer(ctx, m_command_buffer.data(), frame_bytes, m_state.m_offset);
+    m_state->m_offset = 0;
+    GLCommandContext ctx{ *m_state, *this };
+    read_buffer(ctx, m_command_buffer.data(), frame_bytes, m_state->m_offset);
 }
 
 void glRemix::glDriver::read_buffer(const GLCommandContext& ctx, const uint8_t* buffer,
