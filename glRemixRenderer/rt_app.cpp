@@ -1438,10 +1438,15 @@ void glRemix::glRemixRenderer::render()
         memcpy(cb_ptr, &raygen_cb, sizeof(RayGenConstantBuffer));
         m_context.unmap_buffer(raygen_cb_ptr);
 
+        THROW_IF_FALSE(m_context.mark_use(&m_tlas.buffer, dx::Usage::AS_READ));
+
         // Mark UAV texture for raytracing use and emit barrier
         THROW_IF_FALSE(m_context.mark_use(&m_uav_rt, dx::Usage::UAV_RT));
+
+        std::array rt_buffers = { &m_tlas.buffer };
         std::array rt_textures = { &m_uav_rt };
-        m_context.emit_barriers(cmd_list.Get(), nullptr, 0, rt_textures.data(), rt_textures.size());
+        m_context.emit_barriers(cmd_list.Get(), rt_buffers.data(), rt_buffers.size(),
+                                rt_textures.data(), rt_textures.size());
 
         // Bind descriptor heap(s) before setting the root signature when using DIRECTLY_INDEXED
         m_context.set_descriptor_heap(cmd_list.Get(), m_GPU_descriptor_heap);
