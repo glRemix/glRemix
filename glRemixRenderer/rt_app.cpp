@@ -1094,11 +1094,40 @@ void glRemix::glRemixRenderer::build_tlas(ID3D12GraphicsCommandList7* cmd_list)
 
     m_tlas.last_instance_count = valid_instance_count;  // Track for next frame
 
+    // Mark all referenced BLAS for read before building TLAS
+    auto blas_read_barriers = get_arena().alloc_array<dx::D3D12Buffer*>(valid_instance_count);
+    THROW_IF_FALSE(blas_read_barriers);
+    size_t blas_barrier_count = 0;
+    for (UINT i = 0; i < instance_count; i++)
+    {
+        const MeshRecord& mesh_copy = state.m_meshes[i];
+        if (!state.m_mesh_map.contains(mesh_copy.mesh_id))
+        {
+            continue;
+        }
+        const MeshRecord& mesh = state.m_mesh_map.at(mesh_copy.mesh_id);
+        if (!mesh.visible)
+        {
+            continue;
+        }
+        m_context.mark_use(&m_mesh_resources[mesh.blas_vb_ib_idx].blas, dx::Usage::AS_READ);
+        blas_read_barriers[blas_barrier_count++] = &m_mesh_resources[mesh.blas_vb_ib_idx].blas;
+    }
+
     // Mark TLAS for build
     m_context.mark_use(&m_scratch_space, dx::Usage::UAV_COMPUTE);
     m_context.mark_use(&m_tlas.buffer, dx::Usage::AS_WRITE);
-    std::array write_resources = { &m_scratch_space, &m_tlas.buffer };
-    m_context.emit_barriers(cmd_list, write_resources.data(), write_resources.size(), nullptr, 0);
+    
+    // Emit barriers for BLAS reads, scratch, and TLAS write
+    auto all_write_resources = get_arena().alloc_array<dx::D3D12Buffer*>(blas_barrier_count + 2);
+    THROW_IF_FALSE(all_write_resources);
+    for (size_t i = 0; i < blas_barrier_count; i++)
+    {
+        all_write_resources[i] = blas_read_barriers[i];
+    }
+    all_write_resources[blas_barrier_count] = &m_scratch_space;
+    all_write_resources[blas_barrier_count + 1] = &m_tlas.buffer;
+    m_context.emit_barriers(cmd_list, all_write_resources, blas_barrier_count + 2, nullptr, 0);
 
     const auto tlas_build_desc
         = m_context.get_raytracing_acceleration_structure(tlas_desc, &m_tlas.buffer,
@@ -1508,6 +1537,20 @@ void glRemix::glRemixRenderer::render()
         };
 
         cmd_list->DispatchRays(&dispatch_desc);
+        
+        // UAV barrier to ensure raytracing writes complete before copy
+        const D3D12_GLOBAL_BARRIER uav_barrier{
+            .SyncBefore = D3D12_BARRIER_SYNC_RAYTRACING,
+            .SyncAfter = D3D12_BARRIER_SYNC_COPY,
+            .AccessBefore = D3D12_BARRIER_ACCESS_UNORDERED_ACCESS,
+            .AccessAfter = D3D12_BARRIER_ACCESS_COPY_SOURCE,
+        };
+        const D3D12_BARRIER_GROUP uav_barrier_group{
+            .Type = D3D12_BARRIER_TYPE_GLOBAL,
+            .NumBarriers = 1,
+            .pGlobalBarriers = &uav_barrier,
+        };
+        cmd_list->Barrier(1, &uav_barrier_group);
     }
 
     // Copy the ray traced UAV texture into the current swapchain backbuffer, then render ImGui on top
