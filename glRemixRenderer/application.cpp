@@ -22,7 +22,7 @@ void Application::run_with_hwnd(const bool enable_debug_layer)
     // Swapchain creation is deferred until we receive HWND from command stream
 
     THROW_IF_FALSE(
-        m_context.create_fence(&m_fence_frame_ready, m_fence_frame_ready_val[get_frame_index()]));
+        m_context.create_fence(&m_fence_frame_ready, m_fence_frame_ready_val[m_frame_index]));
 
     create();
 

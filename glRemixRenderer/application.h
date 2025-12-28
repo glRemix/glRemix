@@ -32,16 +32,6 @@ protected:
     virtual void destroy() {}
 
 public:
-    UINT get_frame_index() const
-    {
-        return m_frame_index;
-    }
-
-    void increment_frame_index()
-    {
-        m_frame_index = (m_frame_index + 1) % m_frames_in_flight;
-    }
-
     Application() = default;
     void run_with_hwnd(bool enable_debug_layer);
 

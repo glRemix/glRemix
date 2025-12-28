@@ -79,8 +79,8 @@ void glRemix::glRemixRenderer::create_environment_map(ID3D12GraphicsCommandList7
     THROW_IF_FALSE(m_context.create_texture(texture.texture.desc, D3D12_BARRIER_LAYOUT_COPY_DEST,
                                             &texture.texture, nullptr, "env_map"));
 
-    m_texture_upload_buffers[get_frame_index()].emplace_back();
-    dx::D3D12Buffer& staging = m_texture_upload_buffers[get_frame_index()].back();
+    m_texture_upload_buffers[m_frame_index].emplace_back();
+    dx::D3D12Buffer& staging = m_texture_upload_buffers[m_frame_index].back();
     m_context.copy_to_texture(cmd_list, pixels, &staging, &texture.texture);
 
     m_environment.texture = texture.texture;
@@ -598,8 +598,8 @@ bool glRemix::glRemixRenderer::create_pending_textures(ID3D12GraphicsCommandList
         THROW_IF_FALSE(m_context.create_texture(pending.desc, D3D12_BARRIER_LAYOUT_COPY_DEST,
                                                 &texture.texture, nullptr, "texture"));
 
-        m_texture_upload_buffers[get_frame_index()].emplace_back();
-        dx::D3D12Buffer& staging = m_texture_upload_buffers[get_frame_index()].back();
+        m_texture_upload_buffers[m_frame_index].emplace_back();
+        dx::D3D12Buffer& staging = m_texture_upload_buffers[m_frame_index].back();
         m_context.copy_to_texture(cmd_list, pending.pixels.data(), &staging, &texture.texture);
 
         texture.page_index = m_descriptor_pager.allocate_descriptor(m_context,
@@ -1159,7 +1159,7 @@ void glRemix::glRemixRenderer::render()
         = m_mesh_resources
               .size();  // required for setting mesh record pointers properly within driver
     state.m_num_textures = m_textures.size();
-    m_texture_upload_buffers[get_frame_index()].clear();
+    m_texture_upload_buffers[m_frame_index].clear();
     m_driver.process_stream();
 
     XMUINT2 dims;
@@ -1191,7 +1191,7 @@ void glRemix::glRemixRenderer::render()
     // Update material buffers every frame
     for (UINT64 i = 0; i < num_buffers_to_update; i++)
     {
-        const auto& mat_buffer = m_material_buffers[i][get_frame_index()];
+        const auto& mat_buffer = m_material_buffers[i][m_frame_index];
         void* mat_ptr;
         THROW_IF_FALSE(m_context.map_buffer(&mat_buffer.buffer, &mat_ptr));
         const auto start_idx = i * MATERIALS_PER_BUFFER;
@@ -1205,20 +1205,20 @@ void glRemix::glRemixRenderer::render()
     // Update light buffer
     {
         void* light_ptr;
-        THROW_IF_FALSE(m_context.map_buffer(&m_light_buffer[get_frame_index()].buffer, &light_ptr));
+        THROW_IF_FALSE(m_context.map_buffer(&m_light_buffer[m_frame_index].buffer, &light_ptr));
         memcpy(light_ptr, state.m_lights.data(), sizeof(Light) * state.m_lights.size());
-        m_context.unmap_buffer(&m_light_buffer[get_frame_index()].buffer);
+        m_context.unmap_buffer(&m_light_buffer[m_frame_index].buffer);
     }
 
     // Be careful not to call the ID3D12Interface reset instead
-    THROW_IF_FALSE(SUCCEEDED(m_cmd_pools[get_frame_index()].cmd_allocator->Reset()));
+    THROW_IF_FALSE(SUCCEEDED(m_cmd_pools[m_frame_index].cmd_allocator->Reset()));
 
-    THROW_IF_FALSE(SUCCEEDED(m_rt_cmd_pools[get_frame_index()].cmd_allocator->Reset()));
+    THROW_IF_FALSE(SUCCEEDED(m_rt_cmd_pools[m_frame_index].cmd_allocator->Reset()));
 
     // Create a command list in the open state
     ComPtr<ID3D12GraphicsCommandList7> cmd_list;
     THROW_IF_FALSE(m_context.create_command_list(cmd_list.ReleaseAndGetAddressOf(),
-                                                 m_cmd_pools[get_frame_index()]));
+                                                 m_cmd_pools[m_frame_index]));
 
     const auto swapchain_idx = m_context.get_swapchain_index();
 
@@ -1269,7 +1269,7 @@ void glRemix::glRemixRenderer::render()
         // TODO: Execute this block on another thread, or somehow assign it as a job
         ComPtr<ID3D12GraphicsCommandList7> upload_cmd_list;
         THROW_IF_FALSE(m_context.create_command_list(upload_cmd_list.ReleaseAndGetAddressOf(),
-                                                     m_rt_cmd_pools[get_frame_index()],
+                                                     m_rt_cmd_pools[m_frame_index],
                                                      "texture upload command list"));
         if (create_pending_textures(upload_cmd_list.Get()))
         {
@@ -1317,7 +1317,7 @@ void glRemix::glRemixRenderer::render()
         // Materials
         {
             auto buffer_index = mesh_copy.mat_idx / MATERIALS_PER_BUFFER;
-            const auto& material_buffer = m_material_buffers[buffer_index][get_frame_index()];
+            const auto& material_buffer = m_material_buffers[buffer_index][m_frame_index];
             auto page_index = material_buffer.page_index;
             auto offset = m_descriptor_pager.calculate_global_offset(dx::DescriptorPager::MATERIALS,
                                                                      page_index);
@@ -1373,7 +1373,7 @@ void glRemix::glRemixRenderer::render()
                                                            MESHRECORDS_PER_BUFFER);
     for (UINT64 i = 0; i < gpu_meshrecord_buffers_to_update; i++)
     {
-        const auto& mesh_record_buffer = m_gpu_meshrecord_buffers[i][get_frame_index()];
+        const auto& mesh_record_buffer = m_gpu_meshrecord_buffers[i][m_frame_index];
         void* mesh_record_ptr;
         THROW_IF_FALSE(m_context.map_buffer(&mesh_record_buffer.buffer, &mesh_record_ptr));
         const auto start_idx = i * MESHRECORDS_PER_BUFFER;
@@ -1394,7 +1394,7 @@ void glRemix::glRemixRenderer::render()
     // Manually copy mesh records
     for (UINT64 i = 0; i < m_gpu_meshrecord_buffers.size(); i++)
     {
-        const auto& mesh_record_buffer_for_frame = m_gpu_meshrecord_buffers[i][get_frame_index()];
+        const auto& mesh_record_buffer_for_frame = m_gpu_meshrecord_buffers[i][m_frame_index];
 
         // contiguous region starting after paged descriptors
         dx::D3D12Descriptor dst_gpu{
@@ -1441,13 +1441,13 @@ void glRemix::glRemixRenderer::render()
             .dimensions = win_dims,
             .mirror_mode = m_debug_window.m_parameters.mirror_mode,
             .mirror_threshold = m_debug_window.m_parameters.mirror_threshold,
-            .frame_index = get_frame_index(),
+            .frame_index = m_frame_index,
         };
         XMStoreFloat4x4(&raygen_cb.view_proj, XMMatrixTranspose(proj));
         XMStoreFloat4x4(&raygen_cb.inv_view_proj, XMMatrixTranspose(inv_proj));
 
         // Copy constant buffer to GPU
-        auto raygen_cb_ptr = &m_raygen_constant_buffers[get_frame_index()];
+        auto raygen_cb_ptr = &m_raygen_constant_buffers[m_frame_index];
         void* cb_ptr;
         THROW_IF_FALSE(m_context.map_buffer(raygen_cb_ptr, &cb_ptr));
         memcpy(cb_ptr, &raygen_cb, sizeof(RayGenConstantBuffer));
@@ -1476,10 +1476,10 @@ void glRemix::glRemixRenderer::render()
         m_context.copy_descriptors(gpu_heap, m_uav_rt_descriptor, 1);
         // Raygen CBV
         ++gpu_heap.offset;
-        m_context.copy_descriptors(gpu_heap, m_raygen_cbv_descriptors[get_frame_index()], 1);
+        m_context.copy_descriptors(gpu_heap, m_raygen_cbv_descriptors[m_frame_index], 1);
         // Light CBV
         ++gpu_heap.offset;
-        m_context.copy_descriptors(gpu_heap, m_light_buffer[get_frame_index()].descriptor, 1);
+        m_context.copy_descriptors(gpu_heap, m_light_buffer[m_frame_index].descriptor, 1);
         // Environment map
         ++gpu_heap.offset;
         m_context.copy_descriptors(gpu_heap, m_environment.descriptor, 1);
@@ -1625,7 +1625,7 @@ void glRemix::glRemixRenderer::render()
     }
 
     // Submit the command list
-    auto current_fence_value = ++m_fence_frame_ready_val[get_frame_index()];  // Increment wait value
+    auto current_fence_value = ++m_fence_frame_ready_val[m_frame_index];  // Increment wait value
     THROW_IF_FALSE(SUCCEEDED(cmd_list->Close()));
     const std::array<ID3D12CommandList*, 1> lists = { cmd_list.Get() };
     m_gfx_queue.queue->ExecuteCommandLists(1, lists.data());
@@ -1644,7 +1644,7 @@ void glRemix::glRemixRenderer::render()
 
     m_context.present(m_debug_window.m_parameters.unlocked);
 
-    increment_frame_index();
+    m_frame_index = m_context.get_swapchain_index();
 
     // If next frame is ready to be used, otherwise wait
     auto next_fence_value = m_fence_frame_ready_val[m_frame_index];
@@ -1657,7 +1657,7 @@ void glRemix::glRemixRenderer::render()
                                 .timeout = INFINITE };
         THROW_IF_FALSE(m_context.wait_fences(wait_info));
     }
-    m_fence_frame_ready_val[get_frame_index()] = current_fence_value + 1;
+    m_fence_frame_ready_val[m_frame_index] = current_fence_value + 1;
 }
 
 void glRemix::glRemixRenderer::destroy()
