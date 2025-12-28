@@ -1150,9 +1150,12 @@ void glRemix::glRemixRenderer::render()
     if (state.m_current_frame % FRAME_LENIENCY == 0)
     {
         char msg_buf[64];
-        auto f = collect_expired_meshes();
-        snprintf(msg_buf, sizeof(msg_buf), "INFO: Collected expired meshes: %u", f);
-        dbglog_push(msg_buf);
+        const auto f = collect_expired_meshes();
+        if (f > 0)
+        {
+            snprintf(msg_buf, sizeof(msg_buf), "INFO: Collected expired meshes: %u", f);
+            dbglog_push(msg_buf);
+        }
     }
 
     state.m_num_mesh_resources
