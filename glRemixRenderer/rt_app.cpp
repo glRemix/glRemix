@@ -1647,12 +1647,13 @@ void glRemix::glRemixRenderer::render()
     increment_frame_index();
 
     // If next frame is ready to be used, otherwise wait
-    if (m_fence_frame_ready.fence->GetCompletedValue() < m_fence_frame_ready_val[get_frame_index()])
+    auto next_fence_value = m_fence_frame_ready_val[m_frame_index];
+    if (m_fence_frame_ready.fence->GetCompletedValue() < m_fence_frame_ready_val[m_frame_index])
     {
         dx::WaitInfo wait_info{ .wait_all = true,
                                 .count = 1,
                                 .fences = &m_fence_frame_ready,
-                                .values = &current_fence_value,
+                                .values = &next_fence_value,
                                 .timeout = INFINITE };
         THROW_IF_FALSE(m_context.wait_fences(wait_info));
     }
