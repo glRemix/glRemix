@@ -34,6 +34,12 @@
   </tr>
 </table>
 
+<p align="center">
+    <a href="docs/assets/glRemix_1000x1000.mp4">
+        <img src="docs/assets/glRemix_800x800.webp" alt="glRemix render preview" title="Click to see full-sized MP4 Render">
+    </a>
+</p>
+
 ## Overview
 
 glRemix is a DirectX 12 powered platform for remastering old OpenGL games using modern graphics such as real-time raytracing, modern lighting and asset replacement all without modding or source code access.
@@ -42,19 +48,19 @@ This is done by replacing the Window's opengl.dll in the host app’s .exe locat
 
 ## Table of Contents
 
--   [glRemix](#glremix)
-    -   [Overview](#overview)
-    -   [Table of Contents](#table-of-contents)
-    -   [Technical System Details](#technical-system-details)
-    -   [Features](#features)
-    -   [Building](#building)
-        -   [Additional CMake Configuration Options](#additional-cmake-configuration-options)
-            -   [**`GLREMIX_BUILD_SHIM_X64` and `GLREMIX_BUILD_SHIM_WIN32`:**](#glremix_build_shim_x64-and-glremix_build_shim_win32)
-            -   [**`GLREMIX_DEPLOY_DIR`:**](#glremix_deploy_dir)
-            -   [**`GLREMIX_OVERRIDE_RENDERER_PATH` and `GLREMIX_CUSTOM_RENDERER_EXE_PATH`:**](#glremix_override_renderer_path-and-glremix_custom_renderer_exe_path)
-    -   [Minimum Requirements](#minimum-requirements)
-    -   [Dependencies](#dependencies)
-    -   [Development Progress](#development-progress)
+- [glRemix](#glremix)
+    - [Overview](#overview)
+    - [Table of Contents](#table-of-contents)
+    - [Technical System Details](#technical-system-details)
+    - [Features](#features)
+    - [Building](#building)
+        - [Additional CMake Configuration Options](#additional-cmake-configuration-options)
+            - [**`GLREMIX_BUILD_SHIM_X64` and `GLREMIX_BUILD_SHIM_WIN32`:**](#glremix_build_shim_x64-and-glremix_build_shim_win32)
+            - [**`GLREMIX_DEPLOY_DIR`:**](#glremix_deploy_dir)
+            - [**`GLREMIX_OVERRIDE_RENDERER_PATH` and `GLREMIX_CUSTOM_RENDERER_EXE_PATH`:**](#glremix_override_renderer_path-and-glremix_custom_renderer_exe_path)
+    - [Minimum Requirements](#minimum-requirements)
+    - [Dependencies](#dependencies)
+    - [Development Progress](#development-progress)
 
 ## Technical System Details
 
@@ -66,12 +72,16 @@ Please refer to the [System Details](docs/system-details.md) document for more t
 
 The application and path-traced DXR renderer comes equipped with the following rendering features:
 
--   **Path Tracing**
--   **Direct Lighting**
--   **Textures + Materials System**
--   **Environment Mapping**
--   **Asset Replacement**
--   **PBR Overrides**
+- **Path Tracing**
+- **Direct Lighting**
+- **Textures + Materials System**
+- **Environment Mapping**
+- **PBR Overrides**
+- [**Asset Replacement**](docs/system-details.md/#asset-replacement)
+
+| Original glxgears                        | Metal Gear                                 | Steel Gear                                 | Rusty Gear                                       |
+| ---------------------------------------- | ------------------------------------------ | ------------------------------------------ | ------------------------------------------------ |
+| <img src="docs/assets/og-gears-gif.gif"> | <img src="docs/assets/new-gears1-gif.gif"> | <img src="docs/assets/new-gears2-gif.gif"> | <img src="docs/assets/new-gears3-color-gif.gif"> |
 
 ## Building
 
@@ -109,18 +119,18 @@ This will override the path that the shim looks for when launching the DX12 rend
 
 ## Minimum Requirements
 
--   DX12 Ultimate (Feature Level 12_2)
--   Raytracing Tier 1.1
--   GPU Upload Heap Support
--   Tier 2 Descriptor Heaps
+- DX12 Ultimate (Feature Level 12_2)
+- Raytracing Tier 1.1
+- GPU Upload Heap Support
+- Tier 2 Descriptor Heaps
 
 ## Dependencies
 
--   [D3D12MemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator) - MIT License
--   [DirectXTex](https://github.com/microsoft/DirectXTex) - MIT License
--   [fastgltf](https://github.com/spnda/fastgltf) - MIT License
--   [Dear ImGui](https://github.com/ocornut/imgui) - MIT License
--   [SXC](https://github.com/AaronTian-stack/QhenkiX/tree/main/SXC) - MIT License
+- [D3D12MemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator) - MIT License
+- [DirectXTex](https://github.com/microsoft/DirectXTex) - MIT License
+- [fastgltf](https://github.com/spnda/fastgltf) - MIT License
+- [Dear ImGui](https://github.com/ocornut/imgui) - MIT License
+- [SXC](https://github.com/AaronTian-stack/QhenkiX/tree/main/SXC) - MIT License
 
 ## Development Progress
 
